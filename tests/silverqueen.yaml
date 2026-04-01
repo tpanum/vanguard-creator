@@ -1,5 +1,5 @@
 name: "Sliver Queen, Brood Mother"
-ability: "3: Put a Sliver token into play. Treat this token as a 1/1 colorless creature."
+ability: "{3}: Put a Sliver token into play. Treat this token as a 1/1 colorless creature."
 hand: "+0"
 life: "+8"
 artwork: "assets/artwork/sliver.png"
