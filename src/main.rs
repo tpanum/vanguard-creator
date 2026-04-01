@@ -1,3 +1,4 @@
+mod bundle;
 mod card;
 mod fonts;
 mod layout;

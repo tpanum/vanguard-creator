@@ -19,11 +19,11 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
     let template_img = load_template(template)?;
 
     let name_font =
-        FontRef::try_from_slice(fonts::NAME_DATA).context("loading embedded name font")?;
+        FontRef::try_from_slice(fonts::name_data()).context("loading embedded name font")?;
     let body_font =
-        FontRef::try_from_slice(fonts::BODY_DATA).context("loading embedded body font")?;
+        FontRef::try_from_slice(fonts::body_data()).context("loading embedded body font")?;
     let body_bold_font =
-        FontRef::try_from_slice(fonts::BODY_BOLD_DATA).context("loading embedded body-bold font")?;
+        FontRef::try_from_slice(fonts::body_bold_data()).context("loading embedded body-bold font")?;
 
     let multi = yaml_files.len() > 1;
 
@@ -82,7 +82,7 @@ fn load_template(override_path: Option<&Path>) -> Result<RgbaImage> {
             .with_context(|| format!("opening template {}", p.display()))
             .map(|i| i.into_rgba8());
     }
-    image::load_from_memory(fonts::TEMPLATE_DATA)
+    image::load_from_memory(fonts::template_data())
         .context("loading embedded template")
         .map(|i| i.into_rgba8())
 }

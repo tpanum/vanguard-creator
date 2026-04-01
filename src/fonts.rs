@@ -1,7 +1,21 @@
-/// Embedded font data bundled into the binary.
-pub const NAME_DATA: &[u8] = include_bytes!("../assets/fonts/Fremont-Regular.ttf");
-pub const BODY_DATA: &[u8] = include_bytes!("../assets/fonts/Mplantin.ttf");
-pub const BODY_BOLD_DATA: &[u8] = include_bytes!("../assets/fonts/Mplantin-Bold.ttf");
+use crate::bundle;
+
+/// Title font (Fremont Regular).
+pub fn name_data() -> &'static [u8] {
+    bundle::get("fonts/Fremont-Regular.ttf")
+}
+
+/// Body text font (MPlantin).
+pub fn body_data() -> &'static [u8] {
+    bundle::get("fonts/Mplantin.ttf")
+}
+
+/// Bold body text font (MPlantin Bold).
+pub fn body_bold_data() -> &'static [u8] {
+    bundle::get("fonts/Mplantin-Bold.ttf")
+}
 
 /// Embedded card template image.
-pub const TEMPLATE_DATA: &[u8] = include_bytes!("../template.png");
+pub fn template_data() -> &'static [u8] {
+    bundle::get("template.png")
+}

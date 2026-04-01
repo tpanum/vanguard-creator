@@ -10,9 +10,9 @@ use vgc::{card::CardDef, fonts, render::render_card};
 /// our text pixels are present. Eliminates template frame noise when comparing
 /// against a clean mask.
 fn render_text_only(yaml_path: &str) -> RgbaImage {
-    let name_font = FontRef::try_from_slice(fonts::NAME_DATA).expect("name font");
-    let body_bold_font = FontRef::try_from_slice(fonts::BODY_BOLD_DATA).expect("body-bold font");
-    let body_font = FontRef::try_from_slice(fonts::BODY_DATA).expect("body font");
+    let name_font = FontRef::try_from_slice(fonts::name_data()).expect("name font");
+    let body_bold_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body-bold font");
+    let body_font = FontRef::try_from_slice(fonts::body_data()).expect("body font");
 
     let mut card = CardDef::load(Path::new(yaml_path)).expect("load yaml");
     card.flavor = None; // mask covers only title, rules text, and stat bubbles
