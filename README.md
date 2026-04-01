@@ -105,6 +105,7 @@ artwork: "artwork/goblin-king.png"
 | `hand` | yes | Starting hand size modifier (e.g. `+1`, `-2`, `+0`). |
 | `life` | yes | Starting life modifier. |
 | `artwork` | yes | Path to artwork image, resolved relative to the YAML file. |
+| `flavor` | no | Flavor text rendered below the ability text. **Currently poorly implemented — avoid using it until rendering is improved.** |
 
 ### Mana Symbols
 
