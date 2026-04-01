@@ -22,8 +22,8 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
         FontRef::try_from_slice(fonts::name_data()).context("loading embedded name font")?;
     let body_font =
         FontRef::try_from_slice(fonts::body_data()).context("loading embedded body font")?;
-    let body_bold_font =
-        FontRef::try_from_slice(fonts::body_bold_data()).context("loading embedded body-bold font")?;
+    let body_bold_font = FontRef::try_from_slice(fonts::body_bold_data())
+        .context("loading embedded body-bold font")?;
 
     let multi = yaml_files.len() > 1;
 
@@ -61,7 +61,14 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
             None
         };
 
-        match render_card(&card, artwork.as_ref(), Some(&template_img), &name_font, &body_bold_font, &body_font) {
+        match render_card(
+            &card,
+            artwork.as_ref(),
+            Some(&template_img),
+            &name_font,
+            &body_bold_font,
+            &body_font,
+        ) {
             Ok(img) => {
                 img.save(&out_path)
                     .with_context(|| format!("saving {}", out_path.display()))?;
@@ -111,7 +118,13 @@ fn resolve_output(
 
 fn sanitize_filename(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim_matches('_')
         .to_lowercase()
@@ -132,9 +145,7 @@ pub fn render_card(
 ) -> Result<RgbaImage> {
     let layout = &DEFAULT;
 
-    let (w, h) = template
-        .map(|t| t.dimensions())
-        .unwrap_or((718, 1024));
+    let (w, h) = template.map(|t| t.dimensions()).unwrap_or((718, 1024));
 
     // ── Create canvas ──────────────────────────────────────────────────────
     let mut canvas = RgbaImage::new(w, h);
@@ -153,22 +164,37 @@ pub fn render_card(
 
     // ── 3. Card name ───────────────────────────────────────────────────────
     let (nx, ny) = layout.name_center;
-    let base_scale = PxScale { x: layout.name_scale.0, y: layout.name_scale.1 };
+    let base_scale = PxScale {
+        x: layout.name_scale.0,
+        y: layout.name_scale.1,
+    };
     let stretch_ratio = base_scale.x / base_scale.y; // default horizontal stretch
-    // Measure at uniform y-scale, then apply stretch.
-    let uniform_scale = PxScale { x: base_scale.y, y: base_scale.y };
+                                                     // Measure at uniform y-scale, then apply stretch.
+    let uniform_scale = PxScale {
+        x: base_scale.y,
+        y: base_scale.y,
+    };
     let natural_w = text::measure_str(&card.name, name_font, uniform_scale);
     let stretched_w = natural_w * stretch_ratio;
     let name_scale = if stretched_w <= layout.name_max_width {
         // Stretch fits: apply the full default stretch ratio.
-        PxScale { x: base_scale.y * stretch_ratio, y: base_scale.y }
+        PxScale {
+            x: base_scale.y * stretch_ratio,
+            y: base_scale.y,
+        }
     } else if natural_w <= layout.name_max_width {
         // Stretched exceeds max but natural fits: reduce stretch to exactly fill max.
-        PxScale { x: base_scale.y * (layout.name_max_width / natural_w), y: base_scale.y }
+        PxScale {
+            x: base_scale.y * (layout.name_max_width / natural_w),
+            y: base_scale.y,
+        }
     } else {
         // Even natural width exceeds max: scale both axes down proportionally.
         let f = layout.name_max_width / natural_w;
-        PxScale { x: base_scale.y * f, y: base_scale.y * f }
+        PxScale {
+            x: base_scale.y * f,
+            y: base_scale.y * f,
+        }
     };
     text::draw_centered_text(
         &mut canvas,
@@ -197,15 +223,40 @@ pub fn render_card(
         layout.para_gap,
     );
 
-    text::draw_ability_text(&mut canvas, &fit, layout.text_box, layout.text_top_padding, body_bold_font, stats_font, layout.para_gap, [0, 0, 0]);
+    text::draw_ability_text(
+        &mut canvas,
+        &fit,
+        layout.text_box,
+        layout.text_top_padding,
+        body_bold_font,
+        stats_font,
+        layout.para_gap,
+        [0, 0, 0],
+    );
 
     // ── 5. Stat modifiers ──────────────────────────────────────────────────
     let stats_scale = PxScale::from(layout.stats_size);
     let (hx, hy) = layout.hand_center;
-    text::draw_centered_text(&mut canvas, &card.hand, hx, hy, stats_font, stats_scale, [0, 0, 0]);
+    text::draw_centered_text(
+        &mut canvas,
+        &card.hand,
+        hx,
+        hy,
+        stats_font,
+        stats_scale,
+        [0, 0, 0],
+    );
 
     let (lx, ly) = layout.life_center;
-    text::draw_centered_text(&mut canvas, &card.life, lx, ly, stats_font, stats_scale, [0, 0, 0]);
+    text::draw_centered_text(
+        &mut canvas,
+        &card.life,
+        lx,
+        ly,
+        stats_font,
+        stats_scale,
+        [0, 0, 0],
+    );
 
     Ok(canvas)
 }

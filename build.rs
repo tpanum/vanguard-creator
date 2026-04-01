@@ -7,10 +7,13 @@ fn main() {
     let out_path = Path::new(&out_dir).join("bundled.tar.zst");
 
     let entries: &[(&str, &str)] = &[
-        ("fonts/Fremont-Regular.ttf", "assets/fonts/Fremont-Regular.ttf"),
-        ("fonts/Mplantin.ttf",        "assets/fonts/Mplantin.ttf"),
-        ("fonts/Mplantin-Bold.ttf",   "assets/fonts/Mplantin-Bold.ttf"),
-        ("template.png",              "template.png"),
+        (
+            "fonts/Fremont-Regular.ttf",
+            "assets/fonts/Fremont-Regular.ttf",
+        ),
+        ("fonts/Mplantin.ttf", "assets/fonts/Mplantin.ttf"),
+        ("fonts/Mplantin-Bold.ttf", "assets/fonts/Mplantin-Bold.ttf"),
+        ("template.png", "template.png"),
     ];
 
     let out_file = fs::File::create(&out_path).expect("create bundled.tar.zst");

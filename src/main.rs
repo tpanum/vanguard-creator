@@ -12,7 +12,10 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "vgc", about = "Vanguard Card Creator — compose custom MTG Vanguard cards")]
+#[command(
+    name = "vgc",
+    about = "Vanguard Card Creator — compose custom MTG Vanguard cards"
+)]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -96,16 +99,27 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Commands::Create { paths, output, template } => {
-            render::run(&paths, output.as_deref(), template.as_deref())
-        }
+        Commands::Create {
+            paths,
+            output,
+            template,
+        } => render::run(&paths, output.as_deref(), template.as_deref()),
         Commands::Validate { paths } => card::validate_cmd(&paths),
-        Commands::ParseMse { file, output, artwork_dir, overwrite } => {
-            mse::run(&file, &output, &artwork_dir, overwrite)
-        }
-        Commands::Print { images, output, page_size, grid, margin, cut_lines, stdin } => {
-            print_cmd::run(images, &output, &page_size, &grid, margin, cut_lines, stdin)
-        }
+        Commands::ParseMse {
+            file,
+            output,
+            artwork_dir,
+            overwrite,
+        } => mse::run(&file, &output, &artwork_dir, overwrite),
+        Commands::Print {
+            images,
+            output,
+            page_size,
+            grid,
+            margin,
+            cut_lines,
+            stdin,
+        } => print_cmd::run(images, &output, &page_size, &grid, margin, cut_lines, stdin),
     };
 
     if let Err(e) = result {
