@@ -1,0 +1,6 @@
+/target/
+*.png.bak
+/gerrard.png
+/sliver.png
+.#*
+.playwright-mcp/

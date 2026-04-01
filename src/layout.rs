@@ -1,0 +1,55 @@
+/// Template layout coordinates for the 718×1024 Vanguard card template.
+/// All values are pixel coordinates measured from the reference template.
+pub struct Layout {
+    /// Artwork transparent region: (left, top, right, bottom)
+    pub art_box: (u32, u32, u32, u32),
+    /// Name banner center point
+    pub name_center: (u32, u32),
+    /// Text box interior: (left, top, right, bottom)
+    pub text_box: (u32, u32, u32, u32),
+    /// Fixed padding from the text box top before the first ability text line.
+    /// Ability text is top-aligned (not vertically centered) so that it sits
+    /// in the correct position regardless of whether flavor text is present.
+    pub text_top_padding: f32,
+    /// Hand stat circle center
+    pub hand_center: (u32, u32),
+    /// Life stat circle center
+    pub life_center: (u32, u32),
+    /// Horizontal padding inside the text box
+    pub text_padding: u32,
+    /// Fixed pixel gap between paragraphs (not scaled with font)
+    pub para_gap: f32,
+    /// Ability text font size range
+    pub ability_size_max: u32,
+    pub ability_size_min: u32,
+    /// Name font size: (x_scale, y_scale) in points.
+    /// Setting x > y stretches glyphs horizontally to match wider original letterforms.
+    pub name_scale: (f32, f32),
+    /// Maximum pixel width for the rendered name. If the name is wider at the
+    /// default scale it is proportionally scaled down to fit.
+    pub name_max_width: f32,
+    /// Minimum pixel width for the rendered name. Short names are stretched
+    /// horizontally (x only) to fill this width, matching original card style.
+    pub name_min_width: f32,
+    /// Stats font size (points)
+    pub stats_size: f32,
+}
+
+/// Default layout calibrated against the 718×1024 reference template.
+/// Coordinates for ability text and stats derived from mask measurements.
+pub const DEFAULT: Layout = Layout {
+    art_box: (86, 111, 632, 588),
+    name_center: (359, 78),
+    text_box: (100, 640, 620, 835),
+    text_top_padding: 29.0,
+    hand_center: (100, 879),
+    life_center: (613, 879),
+    text_padding: 22,
+    para_gap: 20.0,
+    ability_size_max: 24,
+    ability_size_min: 14,
+    name_scale: (71.0, 57.0),
+    name_max_width: 460.0,
+    name_min_width: 0.0,
+    stats_size: 30.0,
+};
