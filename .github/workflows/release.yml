@@ -16,6 +16,8 @@ jobs:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             archive: vgc-linux-x86_64.tar.gz
+          # macOS does not support fully static binaries; the binary links
+          # against libSystem.dylib which is guaranteed present on all macOS installs.
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: vgc-macos-aarch64.tar.gz
