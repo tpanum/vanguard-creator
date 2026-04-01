@@ -2,29 +2,27 @@
 
 A command-line tool for creating custom Magic: The Gathering Vanguard cards. Define cards in YAML, provide artwork, and `vgc` composites them onto an authentic card template with proper typography, mana symbols, and print-ready output.
 
-## Installation
-
+## Usage
+Create a vanguard specification file in YAML (gerrard.yaml).
+```yaml
+name: "Gerrard"
+ability: "During your draw phase, draw an additional card."
+flavor: "Soldier. Adventurer. Heir to the Legacy. Gerrard has, over the years, traveled much of Dominaria in search of fortune and glory. Now, after serving nobly in the Benalish army, he has returned to the Weatherlight to serve as captain in Sisay's absence and to take up the battle against the Lord of the Wastes."
+hand: "-4"
+life: "+0"
+artwork: "assets/artwork/gerrard.png"
 ```
-vgc install
+
+Render it using vgc:
+```shell
+vgc render gerrard.yaml # will produce ./gerrard.png
 ```
 
-Downloads required assets (mana symbol icons) on first run. Fonts and the card template must be provided by the user (see [Assets](#assets)).
+Which will yield the following result:
 
-## Quick Start
+![Gerrard rendered](assets/examples/gerrard.png)
 
-```
-# Render a single card
-vgc render goblin-king.yaml -o goblin-king.png
-
-# Render all cards in a directory
-vgc render vanguards/ -o outputs/
-
-# Import cards from a Magic Set Editor file
-vgc import deck.mse-set -o vanguards/
-
-# Arrange rendered cards into a printable PDF
-vgc print outputs/*.png -o print.pdf
-```
+See the [Gallery](#gallery) for side-by-side comparisons of rendered vanguards vs. originals.
 
 ## Commands
 
@@ -41,9 +39,7 @@ vgc render <path>... [flags]
 | Flag | Description |
 |---|---|
 | `-o, --output <path>` | Output file or directory. Defaults to `<card-name>.png` per card. |
-| `-t, --template <file>` | Card template image. Defaults to `template.png` in the config directory. |
-| `--symbols <dir>` | Directory containing mana symbol PNGs. Defaults to `symbols/` in the config directory. |
-| `--dpi <number>` | Output resolution scaling factor. Default: `1` (native template size). |
+| `--template <file>` | Card template image. Will use embedded image by default. |
 
 ### `vgc import`
 
@@ -77,20 +73,6 @@ Accepts card images via arguments or via stdin (one path per line).
 | `--margin <mm>` | Page margin in millimeters. Default: `10`. |
 | `--cut-lines` | Draw cut lines between cards. |
 | `--stdin` | Read image paths from stdin instead of arguments. |
-
-### `vgc symbols`
-
-Download and cache mana symbol assets.
-
-```
-vgc symbols [flags]
-```
-
-| Flag | Description |
-|---|---|
-| `--size <px>` | Rasterized symbol size. Default: `64`. |
-| `--source <url>` | Base URL for symbol SVGs. Default: Scryfall CDN. |
-| `--force` | Re-download even if symbols already exist. |
 
 ### `vgc validate`
 
@@ -148,16 +130,7 @@ This produces a visible gap between the two ability blocks on the rendered card.
 
 ## Assets
 
-`vgc` requires the following assets in its config directory (default: `~/.config/vgc/`, overridable per-flag or via `VGC_CONFIG_DIR`):
-
-| Asset | Purpose |
-|---|---|
-| `template.png` | The base Vanguard card frame with transparent artwork region. |
-| `fonts/Name.ttf` | Title font (e.g. Goudy Medieval). |
-| `fonts/Body.ttf` | Rules text font (e.g. MPlantin). |
-| `fonts/Body-Bold.ttf` | Bold rules text font. |
-| `fonts/Stats.ttf` | Stat number font. |
-| `symbols/*.png` | Rasterized mana symbols (auto-downloaded via `vgc symbols`). |
+All required assets — card template, fonts (Fremont Regular, MPlantin), and mana symbol PNGs — are bundled into the binary. No installation step or external asset directory is needed. Pass `--template <file>` to `vgc render` to override the embedded template with a custom one.
 
 ## Gallery
 
@@ -180,7 +153,7 @@ Side-by-side comparisons of `vgc`-rendered cards (left) versus original Wizards 
 
 ## Examples
 
-```
+```shell
 # Import an MSE deck, render all cards, and produce a print PDF
 vgc import deck.mse-set -o cards/
 vgc render cards/ -o renders/
@@ -192,8 +165,8 @@ vgc render cards/goblin-king.yaml -o renders/goblin-king.png
 # Validate all cards before rendering
 vgc validate cards/
 
-# Pipe changed files into a print run
-git diff --name-only HEAD~1 -- '*.png' | vgc print --stdin -o updated.pdf
+# Use a custom template instead of the embedded one
+vgc render gerrard.yaml --template my-template.png
 ```
 
 ## License

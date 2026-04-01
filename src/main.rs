@@ -31,8 +31,8 @@ enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
 
-        /// Card template image (default: ./template.png)
-        #[arg(short, long)]
+        /// Card template image (default: embedded)
+        #[arg(long)]
         template: Option<PathBuf>,
     },
 

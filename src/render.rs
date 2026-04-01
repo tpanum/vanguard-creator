@@ -16,7 +16,7 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
         bail!("no YAML card files found in the given paths");
     }
 
-    let template_path = resolve_template(template)?;
+    let template_img = load_template(template)?;
 
     let name_font =
         FontRef::try_from_slice(fonts::NAME_DATA).context("loading embedded name font")?;
@@ -61,11 +61,7 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
             None
         };
 
-        let template = image::open(&template_path)
-            .with_context(|| format!("opening template {}", template_path.display()))?
-            .into_rgba8();
-
-        match render_card(&card, artwork.as_ref(), Some(&template), &name_font, &body_bold_font, &body_font) {
+        match render_card(&card, artwork.as_ref(), Some(&template_img), &name_font, &body_bold_font, &body_font) {
             Ok(img) => {
                 img.save(&out_path)
                     .with_context(|| format!("saving {}", out_path.display()))?;
@@ -80,21 +76,15 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
     Ok(())
 }
 
-fn resolve_template(override_path: Option<&Path>) -> Result<PathBuf> {
+fn load_template(override_path: Option<&Path>) -> Result<RgbaImage> {
     if let Some(p) = override_path {
-        if p.exists() {
-            return Ok(p.to_owned());
-        }
-        bail!("template file not found: {}", p.display());
+        return image::open(p)
+            .with_context(|| format!("opening template {}", p.display()))
+            .map(|i| i.into_rgba8());
     }
-    let default = Path::new("template.png");
-    if default.exists() {
-        return Ok(default.to_owned());
-    }
-    bail!(
-        "template.png not found in the current directory. \
-         Place template.png here or pass --template <path>."
-    );
+    image::load_from_memory(fonts::TEMPLATE_DATA)
+        .context("loading embedded template")
+        .map(|i| i.into_rgba8())
 }
 
 fn resolve_output(

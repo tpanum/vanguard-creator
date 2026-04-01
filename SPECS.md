@@ -10,18 +10,17 @@ This document defines the behavior, data formats, and rendering rules for `vgc`.
 
 ### 1.1 Global Flags
 
-| Flag | Env Var | Description |
-|---|---|---|
-| `--config-dir <path>` | `VGC_CONFIG_DIR` | Asset root directory. Default: `~/.config/vgc/`. |
-| `--quiet` | | Suppress progress output. Only errors are printed. |
-| `--verbose` | | Print detailed progress per card. |
+| Flag | Description |
+|---|---|
+| `--quiet` | Suppress progress output. Only errors are printed. |
+| `--verbose` | Print detailed progress per card. |
 
 ### 1.2 Subcommands
 
 | Command | Purpose |
 |---|---|
-| `create` | Produce card images from YAML definitions. |
-| `parse-mse` | Parse an MSE set file into YAML + artwork. |
+| `render` | Produce card images from YAML definitions. |
+| `import` | Parse an MSE set file into YAML + artwork. |
 | `print` | Lay out card images into a paginated PDF. |
 | `validate` | Check card definitions without rendering. |
 
@@ -276,8 +275,8 @@ Output: one line per issue, prefixed with the file path. Exit code `0` if all ca
 
 ## 8. Error Handling
 
-- **Missing template**: Fatal error with a message pointing to the expected path and how to configure it.
-- **Missing fonts**: Fatal error listing which font files are missing.
+- **Missing template**: Only relevant when `--template` is passed. Fatal error with the given path if the file is not found. The embedded template is always available as the default.
+- **Missing fonts**: Fatal error (fonts are bundled; this would indicate a corrupt binary).
 - **Missing artwork**: Warning per card. The card is still rendered with the art box left empty (template background shows through).
 - **Missing symbol PNG**: Warning per occurrence. The symbol token falls back to literal text rendering.
 - **Malformed YAML**: Fatal error per file with the parse error message.
