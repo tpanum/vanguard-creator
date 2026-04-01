@@ -21,8 +21,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Render card images from YAML definitions
-    #[command(alias = "create")]
-    Render {
+    Create {
         /// Card YAML files or directories
         #[arg(required = true)]
         paths: Vec<PathBuf>,
@@ -44,7 +43,8 @@ enum Commands {
     },
 
     /// Import cards from a Magic Set Editor (.mse-set) file
-    Import {
+    #[command(name = "parse-mse")]
+    ParseMse {
         /// Path to the .mse-set file
         file: PathBuf,
 
@@ -95,11 +95,11 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Commands::Render { paths, output, template } => {
+        Commands::Create { paths, output, template } => {
             render::run(&paths, output.as_deref(), template.as_deref())
         }
         Commands::Validate { paths } => card::validate_cmd(&paths),
-        Commands::Import { file, output, artwork_dir, overwrite } => {
+        Commands::ParseMse { file, output, artwork_dir, overwrite } => {
             mse::run(&file, &output, &artwork_dir, overwrite)
         }
         Commands::Print { images, output, page_size, grid, margin, cut_lines, stdin } => {

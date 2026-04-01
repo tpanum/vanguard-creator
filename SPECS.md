@@ -19,8 +19,8 @@ This document defines the behavior, data formats, and rendering rules for `vgc`.
 
 | Command | Purpose |
 |---|---|
-| `render` | Produce card images from YAML definitions. |
-| `import` | Parse an MSE set file into YAML + artwork. |
+| `create` | Produce card images from YAML definitions. |
+| `parse-mse` | Parse an MSE set file into YAML + artwork. |
 | `print` | Lay out card images into a paginated PDF. |
 | `validate` | Check card definitions without rendering. |
 

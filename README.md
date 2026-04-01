@@ -15,7 +15,7 @@ artwork: "assets/artwork/gerrard.png"
 
 Render it using vgc:
 ```shell
-vgc render gerrard.yaml # will produce ./gerrard.png
+vgc create gerrard.yaml # will produce ./gerrard.png
 ```
 
 Which will yield the following result:
@@ -26,12 +26,12 @@ See the [Gallery](#gallery) for side-by-side comparisons of rendered vanguards v
 
 ## Commands
 
-### `vgc render`
+### `vgc create`
 
 Render one or more card definitions into card images.
 
 ```
-vgc render <path>... [flags]
+vgc create <path>... [flags]
 ```
 
 `<path>` can be a YAML file or a directory (all `.yaml` files inside will be rendered).
@@ -41,12 +41,12 @@ vgc render <path>... [flags]
 | `-o, --output <path>` | Output file or directory. Defaults to `<card-name>.png` per card. |
 | `--template <file>` | Card template image. Will use embedded image by default. |
 
-### `vgc import`
+### `vgc parse-mse`
 
 Extract cards and artwork from a Magic Set Editor (`.mse-set`) file into individual YAML card definitions.
 
 ```
-vgc import <file.mse-set> [flags]
+vgc parse-mse <file.mse-set> [flags]
 ```
 
 | Flag | Description |
@@ -154,19 +154,19 @@ Side-by-side comparisons of `vgc`-rendered cards (left) versus original Wizards 
 ## Examples
 
 ```shell
-# Import an MSE deck, render all cards, and produce a print PDF
-vgc import deck.mse-set -o cards/
-vgc render cards/ -o renders/
+# Parse an MSE deck, render all cards, and produce a print PDF
+vgc parse-mse deck.mse-set -o cards/
+vgc create cards/ -o renders/
 vgc print renders/*.png -o deck-print.pdf --cut-lines
 
 # Re-render a single card after editing its YAML
-vgc render cards/goblin-king.yaml -o renders/goblin-king.png
+vgc create cards/goblin-king.yaml -o renders/goblin-king.png
 
 # Validate all cards before rendering
 vgc validate cards/
 
 # Use a custom template instead of the embedded one
-vgc render gerrard.yaml --template my-template.png
+vgc create gerrard.yaml --template my-template.png
 ```
 
 ## License
