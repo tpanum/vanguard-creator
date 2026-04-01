@@ -20,7 +20,7 @@ vgc create gerrard.yaml # will produce ./gerrard.png
 
 Which will yield the following result:
 
-![Gerrard rendered](assets/examples/gerrard.png)
+<p align="center"><img src="assets/examples/gerrard.png" width="359"/></p>
 
 See the [Gallery](#gallery) for side-by-side comparisons of rendered vanguards vs. originals.
 
