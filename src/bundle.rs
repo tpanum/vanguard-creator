@@ -1,42 +1,46 @@
-//! Embedded asset bundle: fonts and card template packed into a zstd-compressed
-//! tar archive at build time and included directly into the binary.
+//! Embedded asset bundle.
 //!
-//! Assets are extracted lazily on first access and cached for the lifetime of
-//! the process.
+//! Fonts are packed into `assets/fonts/fonts.tar.zst` (committed to the repo)
+//! and embedded directly into the binary via `include_bytes!`. The card
+//! template is embedded the same way from `template.png`.
+//!
+//! Font data is extracted lazily on first access and cached for the lifetime
+//! of the process.
 
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::OnceLock;
 
-const DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/bundled.tar.zst"));
+const FONTS_BUNDLE: &[u8] = include_bytes!("../assets/fonts/fonts.tar.zst");
+pub const TEMPLATE: &[u8] = include_bytes!("../template.png");
 
-static ASSETS: OnceLock<HashMap<String, Vec<u8>>> = OnceLock::new();
+static FONTS: OnceLock<HashMap<String, Vec<u8>>> = OnceLock::new();
 
-fn assets() -> &'static HashMap<String, Vec<u8>> {
-    ASSETS.get_or_init(|| {
-        let decoder = zstd::Decoder::new(DATA).expect("decompress asset bundle");
+fn fonts() -> &'static HashMap<String, Vec<u8>> {
+    FONTS.get_or_init(|| {
+        let decoder = zstd::Decoder::new(FONTS_BUNDLE).expect("decompress fonts bundle");
         let mut archive = tar::Archive::new(decoder);
         let mut map = HashMap::new();
-        for entry in archive.entries().expect("read asset bundle entries") {
-            let mut e = entry.expect("read bundle entry");
+        for entry in archive.entries().expect("read fonts bundle entries") {
+            let mut e = entry.expect("read fonts entry");
             let name = e
                 .path()
-                .expect("bundle entry path")
+                .expect("fonts entry path")
                 .to_str()
-                .expect("bundle entry path is utf-8")
+                .expect("fonts entry path is utf-8")
                 .to_owned();
             let mut data = Vec::new();
-            e.read_to_end(&mut data).expect("read bundle entry data");
+            e.read_to_end(&mut data).expect("read fonts entry data");
             map.insert(name, data);
         }
         map
     })
 }
 
-/// Return the bytes of a bundled asset by its archive path (e.g. `"template.png"`).
+/// Return the bytes of a bundled font by its filename (e.g. `"Mplantin.ttf"`).
 /// Panics if the name is not present — this indicates a broken build.
-pub fn get(name: &str) -> &'static [u8] {
-    assets()
+pub fn font(name: &str) -> &'static [u8] {
+    fonts()
         .get(name)
-        .unwrap_or_else(|| panic!("bundled asset not found: {name}"))
+        .unwrap_or_else(|| panic!("bundled font not found: {name}"))
 }
