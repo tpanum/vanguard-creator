@@ -228,6 +228,7 @@ pub fn render_card(
         body_font,
         layout.para_gap,
         layout.rules_centering_height,
+        layout.ability_stroke,
         [0, 0, 0],
     );
 

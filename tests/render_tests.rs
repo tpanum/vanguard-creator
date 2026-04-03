@@ -106,6 +106,7 @@ fn render_rules(yaml_path: &str) -> RgbaImage {
         &body_font,
         layout.para_gap,
         layout.rules_centering_height,
+        layout.ability_stroke,
         [0, 0, 0],
     );
     flatten_alpha(&mut canvas);
@@ -519,7 +520,7 @@ fn test_gerrard_rules() {
         &render_rules("tests/gerrard.yaml"),
         "tests/fixtures/gerrard_rules_mask.png",
         "gerrard_rules",
-        0.18,
+        0.30,
     );
 }
 
@@ -563,7 +564,7 @@ fn test_silverqueen_rules() {
         &render_rules("tests/silverqueen.yaml"),
         "tests/fixtures/silverqueen_rules_mask.png",
         "silverqueen_rules",
-        0.20,
+        0.28,
     );
 }
 
@@ -645,7 +646,7 @@ fn test_sidar_rules() {
         &render_rules("tests/sidar.yaml"),
         "tests/fixtures/sidar_rules_mask.png",
         "sidar_rules",
-        0.15,
+        0.22,
     );
 }
 
@@ -727,7 +728,7 @@ fn test_volrath_rules() {
         &render_rules("tests/volrath.yaml"),
         "tests/fixtures/volrath_rules_mask.png",
         "volrath_rules",
-        0.03,
+        0.22,
     );
 }
 

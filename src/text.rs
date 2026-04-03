@@ -397,6 +397,7 @@ pub fn draw_ability_text(
     flavor_font: &FontRef,
     para_gap: f32,
     centering_height: f32,
+    stroke: u32,
     color: [u8; 3],
 ) {
     let (box_left, box_top, box_right, box_bottom) = text_box;
@@ -428,6 +429,7 @@ pub fn draw_ability_text(
         ability_baseline_from_top,
         center_x,
         para_gap,
+        stroke,
         color,
         &mut y,
     );
@@ -452,6 +454,7 @@ pub fn draw_ability_text(
             flavor_baseline_from_top,
             center_x,
             para_gap,
+            0,
             color,
             &mut y,
         );
@@ -469,9 +472,27 @@ fn draw_lines(
     baseline_from_top: f32,
     center_x: f32,
     para_gap: f32,
+    stroke: u32,
     color: [u8; 3],
     y: &mut f32,
 ) {
+    // Stroke offsets: draw text at each offset before the final on-pixel pass.
+    // This thickens strokes uniformly, simulating a weight between regular and bold.
+    let offsets: &[(f32, f32)] = match stroke {
+        0 => &[],
+        1 => &[(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)],
+        _ => &[
+            (-1.0, -1.0),
+            (-1.0, 0.0),
+            (-1.0, 1.0),
+            (0.0, -1.0),
+            (0.0, 1.0),
+            (1.0, -1.0),
+            (1.0, 0.0),
+            (1.0, 1.0),
+        ],
+    };
+
     for line in lines {
         match line {
             WrappedLine::ParagraphBreak => {
@@ -489,6 +510,17 @@ fn draw_lines(
                 for token in tokens {
                     match token {
                         Token::Text(s) => {
+                            for &(dx, dy) in offsets {
+                                draw_text_at_baseline(
+                                    canvas,
+                                    s,
+                                    x + dx,
+                                    baseline_y + dy,
+                                    font,
+                                    scale,
+                                    color,
+                                );
+                            }
                             let advance =
                                 draw_text_at_baseline(canvas, s, x, baseline_y, font, scale, color);
                             x += advance;
@@ -500,6 +532,17 @@ fn draw_lines(
                                 x += symbol_size as f32;
                             } else {
                                 let fallback = format!("{{{name}}}");
+                                for &(dx, dy) in offsets {
+                                    draw_text_at_baseline(
+                                        canvas,
+                                        &fallback,
+                                        x + dx,
+                                        baseline_y + dy,
+                                        font,
+                                        scale,
+                                        color,
+                                    );
+                                }
                                 let advance = draw_text_at_baseline(
                                     canvas, &fallback, x, baseline_y, font, scale, color,
                                 );
