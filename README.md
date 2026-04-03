@@ -149,9 +149,9 @@ Side-by-side comparisons of `vgc`-rendered cards (left) versus original Wizards 
 | ![Sliver Queen rendered](assets/examples/silverqueen.png) | ![Sliver Queen original](assets/examples/sliver_org.png) |
 
 ### Sidar Kondo
-| Rendered |
-|:---:|
-| ![Sidar Kondo rendered](assets/examples/sidar.png) |
+| Rendered | Original |
+|:---:|:---:|
+| ![Sidar Kondo rendered](assets/examples/sidar.png) | ![Sidar Kondo original](assets/examples/sidar_org.jpg) |
 
 ### Volrath
 | Rendered | Original |
