@@ -124,7 +124,10 @@ pub fn collect_yaml_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
                 .with_context(|| format!("reading directory {}", path.display()))?
                 .filter_map(|e| e.ok())
                 .map(|e| e.path())
-                .filter(|p| p.extension().map_or(false, |ext| ext == "yaml" || ext == "yml"))
+                .filter(|p| {
+                    p.extension()
+                        .is_some_and(|ext| ext == "yaml" || ext == "yml")
+                })
                 .collect();
             entries.sort();
             files.extend(entries);

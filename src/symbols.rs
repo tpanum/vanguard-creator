@@ -25,7 +25,12 @@ pub fn load(name: &str, size: u32) -> Option<RgbaImage> {
     let img = image::load_from_memory(bytes)
         .expect("bundled symbol PNG is valid")
         .into_rgba8();
-    Some(image::imageops::resize(&img, size, size, FilterType::Lanczos3))
+    Some(image::imageops::resize(
+        &img,
+        size,
+        size,
+        FilterType::Lanczos3,
+    ))
 }
 
 /// Whether a symbol name is known (has a bundled PNG).

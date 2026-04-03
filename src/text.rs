@@ -1,4 +1,4 @@
-use ab_glyph::{Font, FontRef, Glyph, GlyphId, PxScale, ScaleFont, point};
+use ab_glyph::{point, Font, FontRef, Glyph, GlyphId, PxScale, ScaleFont};
 use image::{Rgba, RgbaImage};
 use regex::Regex;
 use std::sync::OnceLock;
@@ -74,7 +74,10 @@ fn measure_token(token: &Token, font: &FontRef, scale: PxScale, symbol_size: u32
 
 /// Total pixel width of a slice of tokens.
 pub fn measure_tokens(tokens: &[Token], font: &FontRef, scale: PxScale, symbol_size: u32) -> f32 {
-    tokens.iter().map(|t| measure_token(t, font, scale, symbol_size)).sum()
+    tokens
+        .iter()
+        .map(|t| measure_token(t, font, scale, symbol_size))
+        .sum()
 }
 
 // ── Word-wrapping ─────────────────────────────────────────────────────────────
@@ -193,6 +196,7 @@ fn block_height(lines: &[WrappedLine], line_height: f32, para_gap: f32) -> f32 {
 ///
 /// Ability text is always rendered at the largest size where it fits alone.
 /// Flavor text then independently auto-scales to fill the remaining space.
+#[allow(clippy::too_many_arguments)]
 pub fn fit_ability_text(
     ability: &str,
     flavor: Option<&str>,
@@ -263,8 +267,14 @@ pub fn fit_ability_text(
     };
 
     FitResult {
-        scale, lines, line_height, symbol_size,
-        flavor_lines, flavor_scale, flavor_line_height, flavor_symbol_size,
+        scale,
+        lines,
+        line_height,
+        symbol_size,
+        flavor_lines,
+        flavor_scale,
+        flavor_line_height,
+        flavor_symbol_size,
     }
 }
 
@@ -361,17 +371,17 @@ pub fn draw_centered_text(
 /// always occupies the top of the text box regardless of flavor presence.
 ///
 /// * `text_box` — (left, top, right, bottom) in pixels
+#[allow(clippy::too_many_arguments)]
 pub fn draw_ability_text(
     canvas: &mut RgbaImage,
     fit: &FitResult,
     text_box: (u32, u32, u32, u32),
-    top_padding: f32,
     font: &FontRef,
     flavor_font: &FontRef,
     para_gap: f32,
     color: [u8; 3],
 ) {
-    let (box_left, box_top, box_right, _box_bottom) = text_box;
+    let (box_left, box_top, box_right, box_bottom) = text_box;
     let center_x = (box_left + box_right) as f32 / 2.0;
 
     let baseline_offset = |f: &FontRef, scale: PxScale, lh: f32| {
@@ -384,12 +394,27 @@ pub fn draw_ability_text(
 
     let ability_baseline_from_top = baseline_offset(font, fit.scale, fit.line_height);
 
-    // Total height of combined block
-    let mut y = box_top as f32 + top_padding;
+    // Vertically place text at 1/4 of the remaining space from the top.
+    // This naturally centers short texts lower and long texts higher,
+    // matching the original card layouts.
+    let block_h = block_height(&fit.lines, fit.line_height, para_gap);
+    let box_h = (box_bottom - box_top) as f32;
+    let mut y = box_top as f32 + (box_h - block_h) / 4.0;
 
     // Draw ability lines
-    draw_lines(canvas, &fit.lines, font, fit.scale, fit.symbol_size, fit.line_height,
-               ability_baseline_from_top, center_x, para_gap, color, &mut y);
+    draw_lines(
+        canvas,
+        &fit.lines,
+        font,
+        fit.scale,
+        fit.symbol_size,
+        fit.line_height,
+        ability_baseline_from_top,
+        center_x,
+        para_gap,
+        color,
+        &mut y,
+    );
 
     // Draw separator and flavor if present
     if let (Some(fl), Some(fscale), Some(flh), Some(fsym)) = (
@@ -401,11 +426,23 @@ pub fn draw_ability_text(
         y += para_gap + SEPARATOR_H + para_gap;
 
         let flavor_baseline_from_top = baseline_offset(flavor_font, fscale, flh);
-        draw_lines(canvas, fl, flavor_font, fscale, fsym, flh,
-                   flavor_baseline_from_top, center_x, para_gap, color, &mut y);
+        draw_lines(
+            canvas,
+            fl,
+            flavor_font,
+            fscale,
+            fsym,
+            flh,
+            flavor_baseline_from_top,
+            center_x,
+            para_gap,
+            color,
+            &mut y,
+        );
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_lines(
     canvas: &mut RgbaImage,
     lines: &[WrappedLine],
@@ -433,9 +470,8 @@ fn draw_lines(
                 for token in tokens {
                     match token {
                         Token::Text(s) => {
-                            let advance = draw_text_at_baseline(
-                                canvas, s, x, baseline_y, font, scale, color,
-                            );
+                            let advance =
+                                draw_text_at_baseline(canvas, s, x, baseline_y, font, scale, color);
                             x += advance;
                         }
                         Token::Symbol(name) => {

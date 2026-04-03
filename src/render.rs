@@ -109,7 +109,7 @@ fn resolve_output(
                 .unwrap_or(Path::new("."))
                 .join(format!("{safe_name}.png"))
         }
-        Some(p) if p.is_dir() || (multi && !p.extension().is_some_and(|e| e == "png")) => {
+        Some(p) if p.is_dir() || (multi && p.extension().is_none_or(|e| e != "png")) => {
             p.join(format!("{safe_name}.png"))
         }
         Some(p) => p.to_owned(),
@@ -227,7 +227,6 @@ pub fn render_card(
         &mut canvas,
         &fit,
         layout.text_box,
-        layout.text_top_padding,
         body_bold_font,
         stats_font,
         layout.para_gap,

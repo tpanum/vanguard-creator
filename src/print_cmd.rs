@@ -73,8 +73,7 @@ pub fn run(
     // Load and scale all card images
     let card_imgs: Vec<RgbaImage> = image_paths
         .iter()
-        .enumerate()
-        .filter_map(|(_i, p)| {
+        .filter_map(|p| {
             match image::open(p) {
                 Ok(img) => {
                     let rgba = img.into_rgba8();
@@ -126,14 +125,7 @@ pub fn run(
 
             if cut_lines {
                 draw_cut_lines(
-                    &mut page,
-                    cell_x,
-                    cell_y,
-                    cell_w,
-                    cell_h,
-                    margin_px,
-                    page_w_px,
-                    page_h_px,
+                    &mut page, cell_x, cell_y, cell_w, cell_h, margin_px, page_w_px, page_h_px,
                 );
             }
         }
@@ -144,7 +136,7 @@ pub fn run(
     // Save pages as a multi-page PDF using PIL-style JPEG embedding
     // For now output as individual PNGs or a multi-image TIFF
     // TODO: proper PDF output with a PDF library
-    if output.extension().map_or(false, |e| e == "pdf") {
+    if output.extension().is_some_and(|e| e == "pdf") {
         save_as_pdf(&pages, output).context("saving PDF")?;
     } else {
         for (i, page) in pages.iter().enumerate() {
@@ -167,6 +159,7 @@ pub fn run(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_cut_lines(
     page: &mut RgbaImage,
     cell_x: i32,
@@ -226,7 +219,7 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
 
     // Build PDF bytes
     let mut pdf = Vec::new();
-    write!(pdf, "%PDF-1.4\n")?;
+    writeln!(pdf, "%PDF-1.4")?;
 
     let mut offsets: Vec<u64> = Vec::new();
 
@@ -253,11 +246,7 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
         .join(" ");
     write_obj!(
         2,
-        format!(
-            "<< /Type /Pages /Kids [{}] /Count {} >>",
-            page_ids_str, n
-        )
-        .as_bytes()
+        format!("<< /Type /Pages /Kids [{}] /Count {} >>", page_ids_str, n).as_bytes()
     );
 
     for (i, (page, jpeg)) in pages.iter().zip(jpeg_bufs.iter()).enumerate() {
@@ -270,10 +259,7 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
         let pt_w = pw as f32 * 72.0 / 300.0;
         let pt_h = ph as f32 * 72.0 / 300.0;
 
-        let page_stream = format!(
-            "q {} 0 0 {} 0 0 cm /Im0 Do Q",
-            pt_w, pt_h
-        );
+        let page_stream = format!("q {} 0 0 {} 0 0 cm /Im0 Do Q", pt_w, pt_h);
 
         // Page object
         write_obj!(
@@ -313,9 +299,9 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
     // Cross-reference table
     let xref_offset = pdf.len() as u64;
     write!(pdf, "xref\n0 {}\n", offsets.len() + 1)?;
-    write!(pdf, "0000000000 65535 f \n")?;
+    writeln!(pdf, "0000000000 65535 f ")?;
     for off in &offsets {
-        write!(pdf, "{:010} 00000 n \n", off)?;
+        writeln!(pdf, "{:010} 00000 n ", off)?;
     }
     write!(
         pdf,
@@ -324,8 +310,7 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
         xref_offset
     )?;
 
-    std::fs::write(output, &pdf)
-        .with_context(|| format!("writing {}", output.display()))?;
+    std::fs::write(output, &pdf).with_context(|| format!("writing {}", output.display()))?;
     println!("Saved: {} ({} pages)", output.display(), n);
     Ok(())
 }

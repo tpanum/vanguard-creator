@@ -7,10 +7,6 @@ pub struct Layout {
     pub name_center: (u32, u32),
     /// Text box interior: (left, top, right, bottom)
     pub text_box: (u32, u32, u32, u32),
-    /// Fixed padding from the text box top before the first ability text line.
-    /// Ability text is top-aligned (not vertically centered) so that it sits
-    /// in the correct position regardless of whether flavor text is present.
-    pub text_top_padding: f32,
     /// Hand stat circle center
     pub hand_center: (u32, u32),
     /// Life stat circle center
@@ -28,9 +24,6 @@ pub struct Layout {
     /// Maximum pixel width for the rendered name. If the name is wider at the
     /// default scale it is proportionally scaled down to fit.
     pub name_max_width: f32,
-    /// Minimum pixel width for the rendered name. Short names are stretched
-    /// horizontally (x only) to fill this width, matching original card style.
-    pub name_min_width: f32,
     /// Stats font size (points)
     pub stats_size: f32,
 }
@@ -39,9 +32,8 @@ pub struct Layout {
 /// Coordinates for ability text and stats derived from mask measurements.
 pub const DEFAULT: Layout = Layout {
     art_box: (86, 111, 632, 588),
-    name_center: (359, 78),
+    name_center: (359, 79),
     text_box: (100, 640, 620, 835),
-    text_top_padding: 29.0,
     hand_center: (100, 879),
     life_center: (613, 879),
     text_padding: 22,
@@ -50,6 +42,5 @@ pub const DEFAULT: Layout = Layout {
     ability_size_min: 14,
     name_scale: (71.0, 57.0),
     name_max_width: 460.0,
-    name_min_width: 0.0,
     stats_size: 30.0,
 };

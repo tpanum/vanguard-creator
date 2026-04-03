@@ -108,12 +108,8 @@ fn strip_mse_tags(text: &str) -> String {
     // Remove flavor text
     let text = flavor_re().replace_all(text, "");
     // Expand mana symbols
-    let text = sym_auto_re().replace_all(&text, |caps: &regex::Captures| {
-        expand_mana(&caps[1])
-    });
-    let text = sym_re().replace_all(&text, |caps: &regex::Captures| {
-        format!("{{{}}}", &caps[1])
-    });
+    let text = sym_auto_re().replace_all(&text, |caps: &regex::Captures| expand_mana(&caps[1]));
+    let text = sym_re().replace_all(&text, |caps: &regex::Captures| format!("{{{}}}", &caps[1]));
     // Strip remaining tags
     let text = tag_re().replace_all(&text, "");
     // Normalize whitespace
@@ -157,8 +153,7 @@ fn write_yaml(
         life,
         yaml_quote(artwork_rel),
     );
-    std::fs::write(path, content)
-        .with_context(|| format!("writing {}", path.display()))
+    std::fs::write(path, content).with_context(|| format!("writing {}", path.display()))
 }
 
 fn yaml_quote(s: &str) -> String {
@@ -174,8 +169,8 @@ pub fn run(mse_path: &Path, out_dir: &Path, artwork_subdir: &str, overwrite: boo
     std::fs::create_dir_all(&artwork_dir)
         .with_context(|| format!("creating {}", artwork_dir.display()))?;
 
-    let file = std::fs::File::open(mse_path)
-        .with_context(|| format!("opening {}", mse_path.display()))?;
+    let file =
+        std::fs::File::open(mse_path).with_context(|| format!("opening {}", mse_path.display()))?;
     let mut zip = zip::ZipArchive::new(file)
         .with_context(|| format!("reading ZIP archive {}", mse_path.display()))?;
 
@@ -203,7 +198,10 @@ pub fn run(mse_path: &Path, out_dir: &Path, artwork_subdir: &str, overwrite: boo
         let yaml_path = out_dir.join(format!("{safe_name}.yaml"));
 
         if yaml_path.exists() && !overwrite {
-            eprintln!("skipping {}: already exists (use --overwrite)", yaml_path.display());
+            eprintln!(
+                "skipping {}: already exists (use --overwrite)",
+                yaml_path.display()
+            );
             continue;
         }
 
