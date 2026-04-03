@@ -24,6 +24,9 @@ pub struct Layout {
     /// Maximum pixel width for the rendered name. If the name is wider at the
     /// default scale it is proportionally scaled down to fit.
     pub name_max_width: f32,
+    /// Line-height multiplier for ability text (line_height = font_size × factor).
+    /// 1.0 = tight, 1.25 = standard, higher values add more breathing room.
+    pub line_height_factor: f32,
     /// Stats font size (points)
     pub stats_size: f32,
 }
@@ -42,5 +45,6 @@ pub const DEFAULT: Layout = Layout {
     ability_size_min: 14,
     name_scale: (71.0, 57.0),
     name_max_width: 460.0,
+    line_height_factor: 1.25,
     stats_size: 30.0,
 };

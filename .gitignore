@@ -2,5 +2,7 @@
 *.png.bak
 /gerrard.png
 /sliver.png
+tests/fixtures/*_rendered.png
+tests/fixtures/*_diff.png
 .#*
 .playwright-mcp/

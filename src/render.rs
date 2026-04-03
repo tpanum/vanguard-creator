@@ -221,6 +221,7 @@ pub fn render_card(
         layout.ability_size_max,
         layout.ability_size_min,
         layout.para_gap,
+        layout.line_height_factor,
     );
 
     text::draw_ability_text(

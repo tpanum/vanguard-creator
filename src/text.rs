@@ -85,7 +85,10 @@ pub fn measure_tokens(tokens: &[Token], font: &FontRef, scale: PxScale, symbol_s
 #[derive(Debug)]
 pub enum WrappedLine {
     Tokens(Vec<Token>),
+    /// Extra inter-paragraph gap (triggered by `\n\n` in input).
     ParagraphBreak,
+    /// Forced line break with normal line spacing (triggered by single `\n`).
+    HardBreak,
 }
 
 fn wrap_paragraph(
@@ -134,9 +137,10 @@ fn wrap_paragraph(
     lines
 }
 
-/// Word-wrap ability text into lines, inserting ParagraphBreak sentinels.
+/// Word-wrap ability text into lines.
 ///
-/// Splits on `\n`; each non-empty segment is a paragraph.
+/// `\n\n` separates paragraphs (inserts a `ParagraphBreak` with extra spacing).
+/// Single `\n` is a hard line break (inserts a `HardBreak`, normal line spacing).
 pub fn wrap_text(
     text: &str,
     font: &FontRef,
@@ -147,8 +151,8 @@ pub fn wrap_text(
     let mut all_lines: Vec<WrappedLine> = Vec::new();
     let mut first_para = true;
 
-    for raw_para in text.split('\n') {
-        let para = raw_para.split_whitespace().collect::<Vec<_>>().join(" ");
+    for raw_para in text.split("\n\n") {
+        let para = raw_para.trim();
         if para.is_empty() {
             continue;
         }
@@ -157,9 +161,20 @@ pub fn wrap_text(
         }
         first_para = false;
 
-        let wrapped = wrap_paragraph(&para, font, scale, max_width, symbol_size);
-        for line in wrapped {
-            all_lines.push(WrappedLine::Tokens(line));
+        let mut first_chunk = true;
+        for chunk in para.split('\n') {
+            let chunk = chunk.split_whitespace().collect::<Vec<_>>().join(" ");
+            if chunk.is_empty() {
+                continue;
+            }
+            if !first_chunk {
+                all_lines.push(WrappedLine::HardBreak);
+            }
+            first_chunk = false;
+            let wrapped = wrap_paragraph(&chunk, font, scale, max_width, symbol_size);
+            for line in wrapped {
+                all_lines.push(WrappedLine::Tokens(line));
+            }
         }
     }
 
@@ -188,6 +203,7 @@ fn block_height(lines: &[WrappedLine], line_height: f32, para_gap: f32) -> f32 {
         .map(|l| match l {
             WrappedLine::Tokens(_) => line_height,
             WrappedLine::ParagraphBreak => para_gap,
+            WrappedLine::HardBreak => 0.0,
         })
         .sum()
 }
@@ -207,6 +223,7 @@ pub fn fit_ability_text(
     size_max: u32,
     size_min: u32,
     para_gap: f32,
+    line_height_factor: f32,
 ) -> FitResult {
     // Pass 1: find largest size where ability text alone fits.
     let (scale, lines, line_height, symbol_size) = (size_min..=size_max)
@@ -214,7 +231,7 @@ pub fn fit_ability_text(
         .find_map(|size| {
             let scale = PxScale::from(size as f32);
             let symbol_size = (size as f32 * 1.1) as u32;
-            let line_height = size as f32 * 1.25;
+            let line_height = size as f32 * line_height_factor;
             let lines = wrap_text(ability, font, scale, max_width, symbol_size);
             let h = block_height(&lines, line_height, para_gap);
             if h <= box_height {
@@ -227,7 +244,7 @@ pub fn fit_ability_text(
             // Fallback: min size
             let scale = PxScale::from(size_min as f32);
             let symbol_size = (size_min as f32 * 1.1) as u32;
-            let line_height = size_min as f32 * 1.25;
+            let line_height = size_min as f32 * line_height_factor;
             let lines = wrap_text(ability, font, scale, max_width, symbol_size);
             (scale, lines, line_height, symbol_size)
         });
@@ -242,7 +259,7 @@ pub fn fit_ability_text(
             let result = (size_min..=size_max).rev().find_map(|size| {
                 let fscale = PxScale::from(size as f32);
                 let fsym = (size as f32 * 1.1) as u32;
-                let flh = size as f32 * 1.25;
+                let flh = size as f32 * line_height_factor;
                 let fl = wrap_text(flav, flavor_font, fscale, max_width, fsym);
                 let fh = block_height(&fl, flh, para_gap);
                 if fh <= remaining {
@@ -258,7 +275,7 @@ pub fn fit_ability_text(
                     // Fallback: min size
                     let fscale = PxScale::from(size_min as f32);
                     let fsym = (size_min as f32 * 1.1) as u32;
-                    let flh = size_min as f32 * 1.25;
+                    let flh = size_min as f32 * line_height_factor;
                     let fl = wrap_text(flav, flavor_font, fscale, max_width, fsym);
                     (Some(fl), Some(fscale), Some(flh), Some(fsym))
                 }
@@ -460,6 +477,9 @@ fn draw_lines(
         match line {
             WrappedLine::ParagraphBreak => {
                 *y += para_gap;
+            }
+            WrappedLine::HardBreak => {
+                // No extra spacing — next Tokens line advances by line_height as normal.
             }
             WrappedLine::Tokens(tokens) => {
                 let line_w = measure_tokens(tokens, font, scale, symbol_size);
