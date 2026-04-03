@@ -22,8 +22,6 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
         FontRef::try_from_slice(fonts::name_data()).context("loading embedded name font")?;
     let body_font =
         FontRef::try_from_slice(fonts::body_data()).context("loading embedded body font")?;
-    let body_bold_font = FontRef::try_from_slice(fonts::body_bold_data())
-        .context("loading embedded body-bold font")?;
 
     let multi = yaml_files.len() > 1;
 
@@ -66,7 +64,6 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
             artwork.as_ref(),
             Some(&template_img),
             &name_font,
-            &body_bold_font,
             &body_font,
         ) {
             Ok(img) => {
@@ -140,8 +137,7 @@ pub fn render_card(
     artwork: Option<&RgbaImage>,
     template: Option<&RgbaImage>,
     name_font: &FontRef,
-    body_bold_font: &FontRef,
-    stats_font: &FontRef,
+    body_font: &FontRef,
 ) -> Result<RgbaImage> {
     let layout = &DEFAULT;
 
@@ -214,8 +210,8 @@ pub fn render_card(
     let fit = text::fit_ability_text(
         &card.ability,
         card.flavor.as_deref(),
-        body_bold_font,
-        stats_font,
+        body_font,
+        body_font,
         text_max_w,
         text_box_h,
         layout.ability_size_max,
@@ -228,8 +224,8 @@ pub fn render_card(
         &mut canvas,
         &fit,
         layout.text_box,
-        body_bold_font,
-        stats_font,
+        body_font,
+        body_font,
         layout.para_gap,
         layout.rules_centering_height,
         [0, 0, 0],
@@ -243,7 +239,7 @@ pub fn render_card(
         &card.hand,
         hx,
         hy,
-        stats_font,
+        body_font,
         stats_scale,
         [0, 0, 0],
     );
@@ -254,7 +250,7 @@ pub fn render_card(
         &card.life,
         lx,
         ly,
-        stats_font,
+        body_font,
         stats_scale,
         [0, 0, 0],
     );

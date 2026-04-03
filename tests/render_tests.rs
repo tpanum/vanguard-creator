@@ -79,7 +79,6 @@ fn render_title(yaml_path: &str) -> RgbaImage {
 
 fn render_rules(yaml_path: &str) -> RgbaImage {
     let card = load_card(yaml_path);
-    let body_bold_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body-bold font");
     let body_font = FontRef::try_from_slice(fonts::body_data()).expect("body font");
     let layout = &DEFAULT;
 
@@ -90,7 +89,7 @@ fn render_rules(yaml_path: &str) -> RgbaImage {
     let fit = text::fit_ability_text(
         &card.ability,
         card.flavor.as_deref(),
-        &body_bold_font,
+        &body_font,
         &body_font,
         text_max_w,
         text_box_h,
@@ -103,7 +102,7 @@ fn render_rules(yaml_path: &str) -> RgbaImage {
         &mut canvas,
         &fit,
         layout.text_box,
-        &body_bold_font,
+        &body_font,
         &body_font,
         layout.para_gap,
         layout.rules_centering_height,
@@ -759,7 +758,6 @@ fn test_volrath_right_bubble() {
 #[test]
 fn test_full_card_renders() {
     let name_font = FontRef::try_from_slice(fonts::name_data()).expect("name font");
-    let body_bold_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body-bold font");
     let body_font = FontRef::try_from_slice(fonts::body_data()).expect("body font");
     for yaml in &[
         "tests/gerrard.yaml",
@@ -768,7 +766,6 @@ fn test_full_card_renders() {
         "tests/volrath.yaml",
     ] {
         let card = CardDef::load(Path::new(yaml)).expect("load yaml");
-        render_card(&card, None, None, &name_font, &body_bold_font, &body_font)
-            .expect("render_card");
+        render_card(&card, None, None, &name_font, &body_font).expect("render_card");
     }
 }
