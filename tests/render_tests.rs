@@ -79,7 +79,7 @@ fn render_title(yaml_path: &str) -> RgbaImage {
 
 fn render_rules(yaml_path: &str) -> RgbaImage {
     let card = load_card(yaml_path);
-    let body_font = FontRef::try_from_slice(fonts::body_data()).expect("body font");
+    let body_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body font");
     let layout = &DEFAULT;
 
     let mut canvas = blank_canvas();
@@ -520,7 +520,7 @@ fn test_gerrard_rules() {
         &render_rules("tests/gerrard.yaml"),
         "tests/fixtures/gerrard_rules_mask.png",
         "gerrard_rules",
-        0.30,
+        0.24,
     );
 }
 
@@ -564,7 +564,7 @@ fn test_silverqueen_rules() {
         &render_rules("tests/silverqueen.yaml"),
         "tests/fixtures/silverqueen_rules_mask.png",
         "silverqueen_rules",
-        0.28,
+        0.20,
     );
 }
 
@@ -646,7 +646,7 @@ fn test_sidar_rules() {
         &render_rules("tests/sidar.yaml"),
         "tests/fixtures/sidar_rules_mask.png",
         "sidar_rules",
-        0.22,
+        0.15,
     );
 }
 
@@ -728,7 +728,7 @@ fn test_volrath_rules() {
         &render_rules("tests/volrath.yaml"),
         "tests/fixtures/volrath_rules_mask.png",
         "volrath_rules",
-        0.22,
+        0.15,
     );
 }
 

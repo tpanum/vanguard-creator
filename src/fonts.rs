@@ -6,13 +6,12 @@ pub fn name_data() -> &'static [u8] {
 }
 
 /// Body text font (MPlantin).
+#[allow(dead_code)]
 pub fn body_data() -> &'static [u8] {
     bundle::font("Mplantin.ttf")
 }
 
 /// Bold body text font (MPlantin Bold).
-/// Retained for future use (e.g. ability keywords rendered in bold).
-#[allow(dead_code)]
 pub fn body_bold_data() -> &'static [u8] {
     bundle::font("Mplantin-Bold.ttf")
 }

@@ -21,7 +21,7 @@ pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) ->
     let name_font =
         FontRef::try_from_slice(fonts::name_data()).context("loading embedded name font")?;
     let body_font =
-        FontRef::try_from_slice(fonts::body_data()).context("loading embedded body font")?;
+        FontRef::try_from_slice(fonts::body_bold_data()).context("loading embedded body font")?;
 
     let multi = yaml_files.len() > 1;
 

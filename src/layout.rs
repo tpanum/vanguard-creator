@@ -55,7 +55,7 @@ pub const DEFAULT: Layout = Layout {
     name_scale: (71.0, 57.0),
     name_max_width: 460.0,
     line_height_factor: 1.25,
-    ability_stroke: 2,
+    ability_stroke: 0,
     rules_centering_height: 126.0,
     stats_size: 30.0,
 };
