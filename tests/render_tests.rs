@@ -115,7 +115,7 @@ fn render_rules(yaml_path: &str) -> RgbaImage {
 
 fn render_left_bubble(yaml_path: &str) -> RgbaImage {
     let card = load_card(yaml_path);
-    let body_font = FontRef::try_from_slice(fonts::body_data()).expect("body font");
+    let body_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body font");
     let layout = &DEFAULT;
 
     let mut canvas = blank_canvas();
@@ -136,7 +136,7 @@ fn render_left_bubble(yaml_path: &str) -> RgbaImage {
 
 fn render_right_bubble(yaml_path: &str) -> RgbaImage {
     let card = load_card(yaml_path);
-    let body_font = FontRef::try_from_slice(fonts::body_data()).expect("body font");
+    let body_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body font");
     let layout = &DEFAULT;
 
     let mut canvas = blank_canvas();
@@ -531,7 +531,7 @@ fn test_gerrard_left_bubble() {
         &render_left_bubble("tests/gerrard.yaml"),
         "tests/fixtures/gerrard_left_bubble_mask.png",
         "gerrard_left_bubble",
-        0.20,
+        0.34,
     );
 }
 
@@ -542,7 +542,7 @@ fn test_gerrard_right_bubble() {
         &render_right_bubble("tests/gerrard.yaml"),
         "tests/fixtures/gerrard_right_bubble_mask.png",
         "gerrard_right_bubble",
-        0.30,
+        0.45,
     );
 }
 
@@ -575,7 +575,7 @@ fn test_silverqueen_left_bubble() {
         &render_left_bubble("tests/silverqueen.yaml"),
         "tests/fixtures/silverqueen_left_bubble_mask.png",
         "silverqueen_left_bubble",
-        0.20,
+        0.35,
     );
 }
 
@@ -586,7 +586,7 @@ fn test_silverqueen_right_bubble() {
         &render_right_bubble("tests/silverqueen.yaml"),
         "tests/fixtures/silverqueen_right_bubble_mask.png",
         "silverqueen_right_bubble",
-        0.20,
+        0.27,
     );
 }
 
@@ -657,7 +657,7 @@ fn test_sidar_left_bubble() {
         &render_left_bubble("tests/sidar.yaml"),
         "tests/fixtures/sidar_left_bubble_mask.png",
         "sidar_left_bubble",
-        0.20,
+        0.65,
     );
 }
 
@@ -668,7 +668,7 @@ fn test_sidar_right_bubble() {
         &render_right_bubble("tests/sidar.yaml"),
         "tests/fixtures/sidar_right_bubble_mask.png",
         "sidar_right_bubble",
-        0.20,
+        0.38,
     );
 }
 
@@ -739,7 +739,7 @@ fn test_volrath_left_bubble() {
         &render_left_bubble("tests/volrath.yaml"),
         "tests/fixtures/volrath_left_bubble_mask.png",
         "volrath_left_bubble",
-        0.20,
+        0.53,
     );
 }
 
@@ -750,7 +750,7 @@ fn test_volrath_right_bubble() {
         &render_right_bubble("tests/volrath.yaml"),
         "tests/fixtures/volrath_right_bubble_mask.png",
         "volrath_right_bubble",
-        0.20,
+        0.43,
     );
 }
 
