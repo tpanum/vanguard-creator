@@ -106,6 +106,7 @@ fn render_rules(yaml_path: &str) -> RgbaImage {
         &body_bold_font,
         &body_font,
         layout.para_gap,
+        layout.rules_centering_height,
         [0, 0, 0],
     );
     flatten_alpha(&mut canvas);
@@ -721,14 +722,13 @@ fn test_volrath_title() {
 }
 
 #[test]
-#[ignore = "volrath_rules_mask.png appears incorrect — F1 stuck at ~3% regardless of text; needs visual inspection"]
 fn test_volrath_rules() {
     run_test(
         "Volrath rules",
         &render_rules("tests/volrath.yaml"),
         "tests/fixtures/volrath_rules_mask.png",
         "volrath_rules",
-        0.20,
+        0.03,
     );
 }
 

@@ -27,6 +27,12 @@ pub struct Layout {
     /// Line-height multiplier for ability text (line_height = font_size × factor).
     /// 1.0 = tight, 1.25 = standard, higher values add more breathing room.
     pub line_height_factor: f32,
+    /// Effective height (px) of the centering region for ability text, measured
+    /// from box_top. The text block is centered within this region:
+    ///   offset = max(0, (centering_height - block_h) / 2)
+    /// Shorter texts land lower; longer texts land higher — matching original
+    /// Vanguard card layouts.
+    pub rules_centering_height: f32,
     /// Stats font size (points)
     pub stats_size: f32,
 }
@@ -46,5 +52,6 @@ pub const DEFAULT: Layout = Layout {
     name_scale: (71.0, 57.0),
     name_max_width: 460.0,
     line_height_factor: 1.25,
+    rules_centering_height: 126.0,
     stats_size: 30.0,
 };

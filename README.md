@@ -6,7 +6,7 @@ A command-line tool for creating custom Magic: The Gathering Vanguard cards. Def
 Create a vanguard specification file in YAML (gerrard.yaml).
 ```yaml
 name: "Gerrard"
-ability: "During your draw phase, draw an additional card."
+ability: "During your draw phase,\ndraw an additional card."
 flavor: "Soldier. Adventurer. Heir to the Legacy. Gerrard has, over the years, traveled much of Dominaria in search of fortune and glory. Now, after serving nobly in the Benalish army, he has returned to the Weatherlight to serve as captain in Sisay's absence and to take up the battle against the Lord of the Wastes."
 hand: "-4"
 life: "+0"
@@ -117,17 +117,18 @@ Use `{X}` notation in ability text. Supported symbols:
 
 Symbols are rendered inline at the correct size and baseline.
 
-### Paragraph Breaks
+### Line Breaks and Paragraph Breaks
 
-Separate distinct abilities with a newline in the YAML. Use `|-` (literal block scalar) for multi-paragraph text:
+A single `\n` in ability text is a **hard line break** — the text continues on the next line with normal line spacing, as if word-wrap had broken there. Use this to force a specific break point without adding extra space.
+
+A blank line (`\n\n`) is a **paragraph break** — produces a visible gap between ability blocks. Use `|-` (literal block scalar) in YAML for multi-paragraph text:
 
 ```yaml
 ability: |-
   First ability text.
+
   {2}{G}: Second ability text.
 ```
-
-This produces a visible gap between the two ability blocks on the rendered card.
 
 ## Assets
 
@@ -145,7 +146,12 @@ Side-by-side comparisons of `vgc`-rendered cards (left) versus original Wizards 
 ### Sliver Queen, Brood Mother
 | Rendered | Original |
 |:---:|:---:|
-| ![Sliver Queen rendered](assets/examples/sliver.png) | ![Sliver Queen original](assets/examples/sliver_org.png) |
+| ![Sliver Queen rendered](assets/examples/silverqueen.png) | ![Sliver Queen original](assets/examples/sliver_org.png) |
+
+### Sidar Kondo
+| Rendered |
+|:---:|
+| ![Sidar Kondo rendered](assets/examples/sidar.png) |
 
 ### Volrath
 | Rendered | Original |

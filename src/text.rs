@@ -396,6 +396,7 @@ pub fn draw_ability_text(
     font: &FontRef,
     flavor_font: &FontRef,
     para_gap: f32,
+    centering_height: f32,
     color: [u8; 3],
 ) {
     let (box_left, box_top, box_right, box_bottom) = text_box;
@@ -411,12 +412,10 @@ pub fn draw_ability_text(
 
     let ability_baseline_from_top = baseline_offset(font, fit.scale, fit.line_height);
 
-    // Vertically place text at 1/4 of the remaining space from the top.
-    // This naturally centers short texts lower and long texts higher,
-    // matching the original card layouts.
     let block_h = block_height(&fit.lines, fit.line_height, para_gap);
     let box_h = (box_bottom - box_top) as f32;
-    let mut y = box_top as f32 + (box_h - block_h) / 4.0;
+    let offset = ((centering_height - block_h) / 2.0).clamp(0.0, box_h - block_h);
+    let mut y = box_top as f32 + offset;
 
     // Draw ability lines
     draw_lines(

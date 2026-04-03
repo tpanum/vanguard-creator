@@ -231,6 +231,7 @@ pub fn render_card(
         body_bold_font,
         stats_font,
         layout.para_gap,
+        layout.rules_centering_height,
         [0, 0, 0],
     );
 
