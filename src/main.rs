@@ -38,6 +38,10 @@ enum Commands {
         /// Card template image (default: embedded)
         #[arg(long)]
         template: Option<PathBuf>,
+
+        /// Recursively search directories for YAML files
+        #[arg(short, long)]
+        recursive: bool,
     },
 
     /// Check card definitions without rendering
@@ -45,6 +49,10 @@ enum Commands {
         /// Card YAML files or directories
         #[arg(required = true)]
         paths: Vec<PathBuf>,
+
+        /// Recursively search directories for YAML files
+        #[arg(short, long)]
+        recursive: bool,
     },
 
     /// List YAML files with no artwork field or a missing artwork file (one path per line)
@@ -53,6 +61,10 @@ enum Commands {
         /// Card YAML files or directories
         #[arg(required = true)]
         paths: Vec<PathBuf>,
+
+        /// Recursively search directories for YAML files
+        #[arg(short, long)]
+        recursive: bool,
     },
 
     /// Import cards from a Magic Set Editor (.mse-set) file
@@ -83,6 +95,10 @@ enum Commands {
         /// Skip confirmation prompts and apply all changes automatically
         #[arg(short, long)]
         yes: bool,
+
+        /// Recursively search directories for YAML files
+        #[arg(short, long)]
+        recursive: bool,
     },
 
     /// Arrange card images into a printable PDF
@@ -123,10 +139,17 @@ fn main() {
             paths,
             output,
             template,
-        } => render::run(&paths, output.as_deref(), template.as_deref()),
-        Commands::Validate { paths } => card::validate_cmd(&paths),
-        Commands::ListMissingArtwork { paths } => card::list_missing_artwork_cmd(&paths),
-        Commands::Sync { paths, yes } => sync_cmd::run(&paths, yes),
+            recursive,
+        } => render::run(&paths, output.as_deref(), template.as_deref(), recursive),
+        Commands::Validate { paths, recursive } => card::validate_cmd(&paths, recursive),
+        Commands::ListMissingArtwork { paths, recursive } => {
+            card::list_missing_artwork_cmd(&paths, recursive)
+        }
+        Commands::Sync {
+            paths,
+            yes,
+            recursive,
+        } => sync_cmd::run(&paths, yes, recursive),
         Commands::ParseMse {
             file,
             output,

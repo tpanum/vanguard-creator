@@ -114,23 +114,14 @@ pub fn validate_file(yaml_path: &Path) -> Vec<ValidationIssue> {
 }
 
 /// Collect all .yaml files from a list of paths (files and directories).
-pub fn collect_yaml_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+/// When `recursive` is true, subdirectories are searched depth-first.
+pub fn collect_yaml_files(paths: &[PathBuf], recursive: bool) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for path in paths {
         if path.is_file() {
             files.push(path.clone());
         } else if path.is_dir() {
-            let mut entries: Vec<_> = std::fs::read_dir(path)
-                .with_context(|| format!("reading directory {}", path.display()))?
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| {
-                    p.extension()
-                        .is_some_and(|ext| ext == "yaml" || ext == "yml")
-                })
-                .collect();
-            entries.sort();
-            files.extend(entries);
+            collect_yaml_from_dir(path, recursive, &mut files)?;
         } else {
             bail!("path not found: {}", path.display());
         }
@@ -138,8 +129,28 @@ pub fn collect_yaml_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-pub fn list_missing_artwork_cmd(paths: &[PathBuf]) -> Result<()> {
-    let files = collect_yaml_files(paths)?;
+fn collect_yaml_from_dir(dir: &Path, recursive: bool, files: &mut Vec<PathBuf>) -> Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .with_context(|| format!("reading directory {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .collect();
+    entries.sort();
+    for entry in entries {
+        if entry.is_dir() && recursive {
+            collect_yaml_from_dir(&entry, recursive, files)?;
+        } else if entry
+            .extension()
+            .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
+            files.push(entry);
+        }
+    }
+    Ok(())
+}
+
+pub fn list_missing_artwork_cmd(paths: &[PathBuf], recursive: bool) -> Result<()> {
+    let files = collect_yaml_files(paths, recursive)?;
     for yaml_path in &files {
         let text = match std::fs::read_to_string(yaml_path) {
             Ok(t) => t,
@@ -181,8 +192,8 @@ pub fn list_missing_artwork_cmd(paths: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-pub fn validate_cmd(paths: &[PathBuf]) -> Result<()> {
-    let files = collect_yaml_files(paths)?;
+pub fn validate_cmd(paths: &[PathBuf], recursive: bool) -> Result<()> {
+    let files = collect_yaml_files(paths, recursive)?;
     let mut any_issues = false;
     for file in &files {
         for issue in validate_file(file) {

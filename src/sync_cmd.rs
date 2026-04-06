@@ -29,8 +29,17 @@ struct SyncEntry {
     new_artwork_field: Option<String>,
 }
 
-pub fn run(paths: &[PathBuf], yes: bool) -> Result<()> {
-    let yaml_files = collect_yaml_files(paths)?;
+enum PhaseChoice {
+    /// Proceed and confirm each overwrite individually.
+    Yes,
+    /// Proceed and skip all overwrite confirmations.
+    All,
+    /// Skip this phase entirely.
+    No,
+}
+
+pub fn run(paths: &[PathBuf], yes: bool, recursive: bool) -> Result<()> {
+    let yaml_files = collect_yaml_files(paths, recursive)?;
     if yaml_files.is_empty() {
         println!("No YAML card files found.");
         return Ok(());
@@ -178,94 +187,111 @@ pub fn run(paths: &[PathBuf], yes: bool) -> Result<()> {
     // Phase 1: YAML renames.
     let mut yaml_renames_done = false;
     if yaml_rename_count > 0 {
-        let do_rename = yes || prompt_confirm("Rename YAML files?")?;
-        if do_rename {
-            for e in entries.iter().filter(|e| e.new_yaml_path.is_some()) {
-                let new_yaml = e.new_yaml_path.as_ref().unwrap();
-                if !confirm_overwrite(new_yaml)? {
-                    println!("Skipping: {}", e.yaml_path.display());
-                    continue;
-                }
-                std::fs::rename(&e.yaml_path, new_yaml).with_context(|| {
-                    format!(
-                        "renaming {} to {}",
+        let choice = if yes {
+            PhaseChoice::All
+        } else {
+            prompt_phase("Rename YAML files?")?
+        };
+        match choice {
+            PhaseChoice::No => println!("Skipping YAML renames."),
+            PhaseChoice::Yes | PhaseChoice::All => {
+                let force = matches!(choice, PhaseChoice::All);
+                for e in entries.iter().filter(|e| e.new_yaml_path.is_some()) {
+                    let new_yaml = e.new_yaml_path.as_ref().unwrap();
+                    if !confirm_overwrite(new_yaml, force)? {
+                        println!("Skipping: {}", e.yaml_path.display());
+                        continue;
+                    }
+                    std::fs::rename(&e.yaml_path, new_yaml).with_context(|| {
+                        format!(
+                            "renaming {} to {}",
+                            e.yaml_path.display(),
+                            new_yaml.display()
+                        )
+                    })?;
+                    println!(
+                        "Renamed: {} -> {}",
                         e.yaml_path.display(),
                         new_yaml.display()
-                    )
-                })?;
-                println!(
-                    "Renamed: {} -> {}",
-                    e.yaml_path.display(),
-                    new_yaml.display()
-                );
+                    );
+                }
+                yaml_renames_done = true;
             }
-            yaml_renames_done = true;
-        } else {
-            println!("Skipping YAML renames.");
         }
     }
 
     // Phase 2: Artwork renames + YAML field updates.
     if art_rename_count > 0 {
-        let do_rename =
-            yes || prompt_confirm("Rename artwork files (and update YAML artwork fields)?")?;
-        if do_rename {
-            for e in entries.iter().filter(|e| e.new_artwork_abs.is_some()) {
-                let old_art = e.artwork_abs.as_ref().unwrap();
-                let new_art = e.new_artwork_abs.as_ref().unwrap();
-
-                if !old_art.exists() {
-                    eprintln!(
-                        "warning: artwork not found, skipping rename: {}",
-                        old_art.display()
-                    );
-                    continue;
-                }
-
-                if !confirm_overwrite(new_art)? {
-                    println!("Skipping: {}", old_art.display());
-                    continue;
-                }
-
-                std::fs::rename(old_art, new_art).with_context(|| {
-                    format!("renaming {} to {}", old_art.display(), new_art.display())
-                })?;
-                println!("Renamed: {} -> {}", old_art.display(), new_art.display());
-
-                // Update the artwork field inside the YAML file (which may have been renamed).
-                let effective_yaml = if yaml_renames_done {
-                    e.new_yaml_path.as_ref().unwrap_or(&e.yaml_path)
-                } else {
-                    &e.yaml_path
-                };
-
-                update_artwork_field(
-                    effective_yaml,
-                    e.artwork_field.as_deref().unwrap(),
-                    e.new_artwork_field.as_deref().unwrap(),
-                )?;
-            }
+        let choice = if yes {
+            PhaseChoice::All
         } else {
-            println!("Skipping artwork renames.");
+            prompt_phase("Rename artwork files (and update YAML artwork fields)?")?
+        };
+        match choice {
+            PhaseChoice::No => println!("Skipping artwork renames."),
+            PhaseChoice::Yes | PhaseChoice::All => {
+                let force = matches!(choice, PhaseChoice::All);
+                for e in entries.iter().filter(|e| e.new_artwork_abs.is_some()) {
+                    let old_art = e.artwork_abs.as_ref().unwrap();
+                    let new_art = e.new_artwork_abs.as_ref().unwrap();
+
+                    if !old_art.exists() {
+                        eprintln!(
+                            "warning: artwork not found, skipping rename: {}",
+                            old_art.display()
+                        );
+                        continue;
+                    }
+
+                    if !confirm_overwrite(new_art, force)? {
+                        println!("Skipping: {}", old_art.display());
+                        continue;
+                    }
+
+                    std::fs::rename(old_art, new_art).with_context(|| {
+                        format!("renaming {} to {}", old_art.display(), new_art.display())
+                    })?;
+                    println!("Renamed: {} -> {}", old_art.display(), new_art.display());
+
+                    // Update the artwork field inside the YAML file (which may have been renamed).
+                    let effective_yaml = if yaml_renames_done {
+                        e.new_yaml_path.as_ref().unwrap_or(&e.yaml_path)
+                    } else {
+                        &e.yaml_path
+                    };
+
+                    update_artwork_field(
+                        effective_yaml,
+                        e.artwork_field.as_deref().unwrap(),
+                        e.new_artwork_field.as_deref().unwrap(),
+                    )?;
+                }
+            }
         }
     }
 
     Ok(())
 }
 
-fn prompt_confirm(question: &str) -> Result<bool> {
-    print!("{question} [y/N] ");
+/// Ask the user how to proceed with a rename phase.
+/// Returns All (skip per-file overwrite prompts), Yes (proceed with prompts), or No (skip phase).
+fn prompt_phase(question: &str) -> Result<PhaseChoice> {
+    print!("{question} [y(es)/a(ll)/N] ");
     io::stdout().flush()?;
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    Ok(matches!(input.trim().to_lowercase().as_str(), "y" | "yes"))
+    Ok(match input.trim().to_lowercase().as_str() {
+        "a" | "all" => PhaseChoice::All,
+        "y" | "yes" => PhaseChoice::Yes,
+        _ => PhaseChoice::No,
+    })
 }
 
 /// If `path` already exists on disk, prompt the user whether to overwrite it.
-/// Returns `true` if the rename should proceed (either no conflict, or user confirmed).
-/// This prompt is always shown regardless of the `-y` flag.
-fn confirm_overwrite(path: &Path) -> Result<bool> {
-    if !path.exists() {
+/// When `force` is true the prompt is skipped and the overwrite is allowed.
+/// This prompt is always shown regardless of the `-y` flag unless `force` is set.
+fn confirm_overwrite(path: &Path, force: bool) -> Result<bool> {
+    if !path.exists() || force {
         return Ok(true);
     }
     print!("  '{}' already exists — overwrite? [y/N] ", path.display());

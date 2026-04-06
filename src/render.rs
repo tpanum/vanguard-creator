@@ -10,8 +10,13 @@ use crate::{
     text,
 };
 
-pub fn run(paths: &[PathBuf], output: Option<&Path>, template: Option<&Path>) -> Result<()> {
-    let yaml_files = card::collect_yaml_files(paths)?;
+pub fn run(
+    paths: &[PathBuf],
+    output: Option<&Path>,
+    template: Option<&Path>,
+    recursive: bool,
+) -> Result<()> {
+    let yaml_files = card::collect_yaml_files(paths, recursive)?;
     if yaml_files.is_empty() {
         bail!("no YAML card files found in the given paths");
     }
