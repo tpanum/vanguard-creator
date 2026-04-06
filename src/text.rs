@@ -415,14 +415,16 @@ pub fn draw_ability_text(
 
     let block_h = block_height(&fit.lines, fit.line_height, para_gap);
     let box_h = (box_bottom - box_top) as f32;
-    // Short blocks: center within the calibrated centering region (preserves original
-    // card feel for 1-3 lines).  Tall blocks that exceed that region: center within
-    // the full text box so they don't snap to the top and leave a gap at the bottom.
+    // Center the block within the calibrated centering region for short texts, or
+    // within the full box for tall texts — but cap y_start at 658 px so the text
+    // never drifts below that point regardless of line count.
+    let max_offset = 658.0 - box_top as f32;
     let offset = if block_h <= centering_height {
         (centering_height - block_h) / 2.0
     } else {
         ((box_h - block_h) / 2.0).max(0.0)
-    };
+    }
+    .min(max_offset);
     let mut y = box_top as f32 + offset;
 
     // Draw ability lines
