@@ -6,6 +6,7 @@ mod mse;
 mod print_cmd;
 mod render;
 mod symbols;
+mod sync_cmd;
 mod text;
 
 use clap::{Parser, Subcommand};
@@ -65,6 +66,17 @@ enum Commands {
         overwrite: bool,
     },
 
+    /// Sync YAML filenames and artwork filenames to match the card name
+    Sync {
+        /// Card YAML files or directories to sync
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+
+        /// Skip confirmation prompts and apply all changes automatically
+        #[arg(short, long)]
+        yes: bool,
+    },
+
     /// Arrange card images into a printable PDF
     Print {
         /// Card image files (or use --stdin)
@@ -105,6 +117,7 @@ fn main() {
             template,
         } => render::run(&paths, output.as_deref(), template.as_deref()),
         Commands::Validate { paths } => card::validate_cmd(&paths),
+        Commands::Sync { paths, yes } => sync_cmd::run(&paths, yes),
         Commands::ParseMse {
             file,
             output,

@@ -74,6 +74,32 @@ Accepts card images via arguments or via stdin (one path per line).
 | `--cut-lines` | Draw cut lines between cards. |
 | `--stdin` | Read image paths from stdin instead of arguments. |
 
+### `vgc sync`
+
+Rename YAML files and their artwork files so that each filename matches the card's `name` field, and update the `artwork` path inside each YAML accordingly.
+
+```
+vgc sync <path>... [flags]
+```
+
+`<path>` can be a YAML file or a directory (all `.yaml` files inside will be considered).
+
+The command first shows a summary of all planned changes, then asks for confirmation before renaming YAML files, followed by a second prompt before renaming artwork files. Pass `-y` to skip both prompts.
+
+| Flag | Description |
+|---|---|
+| `-y, --yes` | Skip confirmation prompts and apply all changes automatically. |
+
+**Example:**
+
+```shell
+# cards/ger.yaml contains name: "Gerrard", artwork: "art/ger.png"
+vgc sync cards/
+# Plan:
+#   YAML renames (1):   cards/ger.yaml -> cards/gerrard.yaml
+#   Artwork renames (1): cards/art/ger.png -> cards/art/gerrard.png
+```
+
 ### `vgc validate`
 
 Check card definitions for errors without rendering.
