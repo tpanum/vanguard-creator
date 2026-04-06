@@ -100,6 +100,21 @@ vgc sync cards/
 #   Artwork renames (1): cards/art/ger.png -> cards/art/gerrard.png
 ```
 
+### `vgc list-missing-artwork`
+
+List all YAML files in the given path(s) that have no `artwork` field or whose artwork file does not exist. Outputs one path per line, suitable for use with `xargs`.
+
+```
+vgc list-missing-artwork <path>...
+```
+
+**Example:**
+
+```shell
+# Open every card that is missing artwork in your editor
+vgc list-missing-artwork cards/ | xargs -o $EDITOR
+```
+
 ### `vgc validate`
 
 Check card definitions for errors without rendering.

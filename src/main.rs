@@ -47,6 +47,14 @@ enum Commands {
         paths: Vec<PathBuf>,
     },
 
+    /// List YAML files with no artwork field or a missing artwork file (one path per line)
+    #[command(name = "list-missing-artwork")]
+    ListMissingArtwork {
+        /// Card YAML files or directories
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+    },
+
     /// Import cards from a Magic Set Editor (.mse-set) file
     #[command(name = "parse-mse")]
     ParseMse {
@@ -117,6 +125,7 @@ fn main() {
             template,
         } => render::run(&paths, output.as_deref(), template.as_deref()),
         Commands::Validate { paths } => card::validate_cmd(&paths),
+        Commands::ListMissingArtwork { paths } => card::list_missing_artwork_cmd(&paths),
         Commands::Sync { paths, yes } => sync_cmd::run(&paths, yes),
         Commands::ParseMse {
             file,

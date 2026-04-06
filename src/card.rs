@@ -138,6 +138,49 @@ pub fn collect_yaml_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     Ok(files)
 }
 
+pub fn list_missing_artwork_cmd(paths: &[PathBuf]) -> Result<()> {
+    let files = collect_yaml_files(paths)?;
+    for yaml_path in &files {
+        let text = match std::fs::read_to_string(yaml_path) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("warning: skipping {}: {e}", yaml_path.display());
+                continue;
+            }
+        };
+        let data: serde_yaml::Value = match serde_yaml::from_str(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!(
+                    "warning: skipping {}: YAML parse error: {e}",
+                    yaml_path.display()
+                );
+                continue;
+            }
+        };
+
+        let missing = match data.get("artwork").and_then(|v| v.as_str()) {
+            None => true,
+            Some(artwork_str) => {
+                let artwork = Path::new(artwork_str);
+                let resolved = if artwork.is_absolute() {
+                    artwork.to_owned()
+                } else if let Some(parent) = yaml_path.parent() {
+                    parent.join(artwork)
+                } else {
+                    artwork.to_owned()
+                };
+                !resolved.exists()
+            }
+        };
+
+        if missing {
+            println!("{}", yaml_path.display());
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_cmd(paths: &[PathBuf]) -> Result<()> {
     let files = collect_yaml_files(paths)?;
     let mut any_issues = false;
