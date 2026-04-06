@@ -520,9 +520,7 @@ fn test_gerrard_rules() {
         &render_rules("tests/gerrard.yaml"),
         "tests/fixtures/gerrard_rules_mask.png",
         "gerrard_rules",
-        // Intentionally lower: y_start is capped at 658, placing short-text blocks
-        // ~15 px above where the original card scan has them (y ≈ 673).
-        0.04,
+        0.24,
     );
 }
 
@@ -566,8 +564,7 @@ fn test_silverqueen_rules() {
         &render_rules("tests/silverqueen.yaml"),
         "tests/fixtures/silverqueen_rules_mask.png",
         "silverqueen_rules",
-        // Intentionally lower: see gerrard_rules note.
-        0.01,
+        0.20,
     );
 }
 
@@ -649,8 +646,7 @@ fn test_sidar_rules() {
         &render_rules("tests/sidar.yaml"),
         "tests/fixtures/sidar_rules_mask.png",
         "sidar_rules",
-        // Intentionally lower: see gerrard_rules note.
-        0.01,
+        0.15,
     );
 }
 
