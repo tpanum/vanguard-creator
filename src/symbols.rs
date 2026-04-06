@@ -1,39 +1,51 @@
-use image::{imageops::FilterType, RgbaImage};
+use image::RgbaImage;
+use resvg::{tiny_skia, usvg};
 
-/// Return the bundled PNG bytes for a mana symbol, or None if unknown.
-pub fn bundled_bytes(name: &str) -> Option<&'static [u8]> {
-    match name {
-        "W" => Some(include_bytes!("../assets/symbols/W.png")),
-        "U" => Some(include_bytes!("../assets/symbols/U.png")),
-        "B" => Some(include_bytes!("../assets/symbols/B.png")),
-        "R" => Some(include_bytes!("../assets/symbols/R.png")),
-        "G" => Some(include_bytes!("../assets/symbols/G.png")),
-        "1" => Some(include_bytes!("../assets/symbols/1.png")),
-        "2" => Some(include_bytes!("../assets/symbols/2.png")),
-        "3" => Some(include_bytes!("../assets/symbols/3.png")),
-        "4" => Some(include_bytes!("../assets/symbols/4.png")),
-        "X" => Some(include_bytes!("../assets/symbols/X.png")),
-        "T" => Some(include_bytes!("../assets/symbols/T.png")),
-        _ => None,
-    }
+use crate::bundle;
+
+/// Convert a user-facing symbol notation to the bundle key used in the SVG archive.
+///
+/// The notation is the text captured inside `{…}` in ability text, e.g.:
+///   "W"      → "W"      (white mana)
+///   "W/U"    → "WU"     (hybrid white/blue)
+///   "2/W"    → "2W"     (generic hybrid)
+///   "W/P"    → "WP"     (Phyrexian white)
+///   "W/U/P"  → "WUP"    (Phyrexian hybrid)
+///   "HALF"   → "HALF"   (½ mana)
+///   "T"      → "T"      (tap)
+///
+/// The SVG filenames in the bundle match Scryfall's URL slugs, which are the
+/// symbol codes with all "/" characters removed.
+fn notation_to_key(notation: &str) -> String {
+    notation.replace('/', "")
 }
 
-/// Load a mana symbol at the given display size.
-/// Returns None if the symbol is unknown.
-pub fn load(name: &str, size: u32) -> Option<RgbaImage> {
-    let bytes = bundled_bytes(name)?;
-    let img = image::load_from_memory(bytes)
-        .expect("bundled symbol PNG is valid")
-        .into_rgba8();
-    Some(image::imageops::resize(
-        &img,
-        size,
-        size,
-        FilterType::Lanczos3,
-    ))
+/// Rasterize an SVG at the given square pixel size into an RGBA image.
+fn rasterize(svg_bytes: &[u8], size: u32) -> Option<RgbaImage> {
+    let opts = usvg::Options::default();
+    let tree = usvg::Tree::from_data(svg_bytes, &opts).ok()?;
+    let mut pixmap = tiny_skia::Pixmap::new(size, size)?;
+    let sx = size as f32 / tree.size().width();
+    let sy = size as f32 / tree.size().height();
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(sx, sy),
+        &mut pixmap.as_mut(),
+    );
+    RgbaImage::from_raw(size, size, pixmap.take())
 }
 
-/// Whether a symbol name is known (has a bundled PNG).
-pub fn is_known(name: &str) -> bool {
-    bundled_bytes(name).is_some()
+/// Load a mana symbol at the given square display size.
+///
+/// `notation` is the text between `{` and `}` in the card's ability text.
+/// Returns `None` if the symbol is unknown or cannot be rasterized.
+pub fn load(notation: &str, size: u32) -> Option<RgbaImage> {
+    let key = notation_to_key(notation);
+    let svg = bundle::symbol_svg(&key)?;
+    rasterize(svg, size)
+}
+
+/// Whether a symbol notation is known (has a bundled SVG).
+pub fn is_known(notation: &str) -> bool {
+    bundle::symbol_known(&notation_to_key(notation))
 }

@@ -150,13 +150,31 @@ artwork: "artwork/goblin-king.png"
 
 ### Mana Symbols
 
-Use `{X}` notation in ability text. Supported symbols:
+Use `{…}` notation in ability text. All 84 symbols from the Scryfall symbology API are supported, sourced as SVGs and rasterized inline at the correct size and baseline.
 
-- Colored mana: `{W}` `{U}` `{B}` `{R}` `{G}`
-- Generic mana: `{1}` `{2}` `{3}` `{4}`
-- Special: `{X}` `{T}` (tap)
+**Colored mana**
+`{W}` `{U}` `{B}` `{R}` `{G}`
 
-Symbols are rendered inline at the correct size and baseline.
+**Generic / colorless**
+`{0}` `{1}` `{2}` … `{20}` `{100}` `{1000000}` `{X}` `{Y}` `{Z}` `{C}` `{S}` `{HALF}`
+
+**Two-color hybrid** (white mana or the other color)
+`{W/U}` `{W/B}` `{U/B}` `{U/R}` `{B/R}` `{B/G}` `{R/G}` `{R/W}` `{G/W}` `{G/U}`
+
+**Generic hybrid** (two generic mana or the color)
+`{2/W}` `{2/U}` `{2/B}` `{2/R}` `{2/G}`
+
+**Colorless hybrid**
+`{C/W}` `{C/U}` `{C/B}` `{C/R}` `{C/G}`
+
+**Phyrexian** (pay life instead)
+`{W/P}` `{U/P}` `{B/P}` `{R/P}` `{G/P}` `{C/P}`
+
+**Phyrexian hybrid**
+`{W/U/P}` `{W/B/P}` `{U/B/P}` `{U/R/P}` `{B/R/P}` `{B/G/P}` `{R/G/P}` `{R/W/P}` `{G/W/P}` `{G/U/P}`
+
+**Special / other**
+`{T}` (tap) `{Q}` (untap) `{E}` (energy) `{P}` (Phyrexian generic) `{PW}` (planeswalker) `{CHAOS}` `{A}` `{TK}` `{H}` `{HW}` `{HR}` `{L}` `{D}` `{INFINITY}`
 
 ### Line Breaks and Paragraph Breaks
 
