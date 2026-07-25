@@ -150,8 +150,7 @@ pub fn run(
                     .unwrap_or(Path::new("."))
                     .join(format!("{stem}-{}.{ext}", i + 1))
             };
-            page.save(&path)
-                .with_context(|| format!("saving {}", path.display()))?;
+            crate::meta::save_with_version(page, &path)?;
             println!("Saved: {}", path.display());
         }
     }
@@ -296,6 +295,18 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
         }
     }
 
+    // Document info — records the generator version, mirroring the EXIF
+    // `Software` tag embedded in raster output.
+    let info_id = first_page_obj + n * 2;
+    write_obj!(
+        info_id,
+        format!(
+            "<< /Producer ({0}) /Creator ({0}) >>",
+            crate::meta::software_tag()
+        )
+        .as_bytes()
+    );
+
     // Cross-reference table
     let xref_offset = pdf.len() as u64;
     write!(pdf, "xref\n0 {}\n", offsets.len() + 1)?;
@@ -305,8 +316,9 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
     }
     write!(
         pdf,
-        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+        "trailer\n<< /Size {} /Root 1 0 R /Info {} 0 R >>\nstartxref\n{}\n%%EOF\n",
         offsets.len() + 1,
+        info_id,
         xref_offset
     )?;
 

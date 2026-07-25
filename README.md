@@ -41,6 +41,15 @@ vgc create <path>... [flags]
 | `-o, --output <path>` | Output file or directory. Defaults to `<card-name>.png` per card. |
 | `--template <file>` | Card template image. Will use embedded image by default. |
 
+Every rendered image records the `vgc` version that produced it in an EXIF
+`Software` tag (PNG `eXIf` chunk, JPEG `APP1` segment); PNGs additionally carry
+a `Software` `tEXt` chunk. Print PDFs record it as `/Producer`.
+
+```
+$ exiftool -Software Gerrard.png
+Software                        : vgc 0.8.0
+```
+
 ### `vgc parse-mse`
 
 Extract cards and artwork from a Magic Set Editor (`.mse-set`) file into individual YAML card definitions.

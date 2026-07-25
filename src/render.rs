@@ -8,7 +8,7 @@ use crate::{
     card::{self, CardDef},
     fonts::Fonts,
     layout::{Layout, DEFAULT},
-    text,
+    meta, text,
 };
 
 const BLACK: [u8; 3] = [0, 0, 0];
@@ -51,8 +51,7 @@ pub fn run(
 
         match render_card(&card, artwork.as_ref(), Some(&template_img), &fonts) {
             Ok(img) => {
-                img.save(&out_path)
-                    .with_context(|| format!("saving {}", out_path.display()))?;
+                meta::save_with_version(&img, &out_path)?;
                 println!("Saved: {}", out_path.display());
             }
             Err(e) => {
