@@ -73,6 +73,50 @@ Two anchors, and they are not interchangeable:
 - **Stat bubbles** use `text::draw_text_centered_on_ink`. The target is a circle stamped on the template, so what must sit in its middle is the visible `-4`, not the typographic slot around it. Centering on the font's ascent-plus-descent reserves descender space that digits never use and pushes them ~3 px low.
 - **Card names** use `text::draw_text_centered_on_baseline`. A banner needs every name on the same baseline, so the vertical position must depend only on the font and its size — never on whether the name happens to contain a descender. Ink-centering a title makes `Volrath` ride higher than `Sliver Queen, Brood Mother`.
 
+## Two-digit stat bubbles
+
+The bubbles are circles stamped on the template, so a two-digit modifier has to
+be made to fit. The originals do it by **tightening the spacing, not by shrinking
+or condensing the glyphs**: `layout.stats_multi_digit_tracking` subtracts 3.75 px
+from the advance after each glyph when the value has more than one digit.
+Single-digit values are set at the font's own spacing — a tracking knob applied
+to every value swept flat at 0.0, so the originals' `-4` is spaced as ours is.
+
+The distinction is invisible to a bounding box and to F1, and it is the whole
+point. Condensing the glyphs horizontally reaches the same 42 px-wide box by
+thinning every vertical stem, which the printed cards plainly do not do; it
+scored well (right-bubble mean 62.0% overall) and looked wrong. Measuring the
+scans glyph by glyph settles it: the digits in `+10`, `+12` and `+15` are the
+same width as the digits in `+4` or `-8`, and only the centre-to-centre advance
+between them is short. Tracking then beat condensation on the metric too —
+right-bubble mean overall 58.5% → 63.2%, shape 77.7% → 80.8%, and the two-digit
+cards' shape F1 (77.7–82.4%) joined the single-digit range instead of trailing
+it by 10 points.
+
+**Use `tests/bubble_geometry.rs` for anything about bubble typography**, not the
+bbox in the accuracy diagnosis:
+
+```sh
+cargo test --release --test bubble_geometry -- --ignored --nocapture
+```
+
+It splits both the reference and the render into connected components — the sign
+and each digit — and prints each one's width, height, ink and the
+centre-to-centre step from the glyph before it. Centre-to-centre is the right
+measurement because it is invariant to ink spread: the press fattens every glyph
+on every side, which shrinks the measured *gap* without moving the *centres*, so
+gaps read 3 px tighter on a scan even where the spacing is identical. Ours now
+matches Orim's original exactly (13.5, 13.0) and Urza's within half a pixel.
+
+Eladamri's right-bubble reference carries a speckle above the value, so its bbox
+reads 30 px tall against everyone else's 21 and its overall F1 swings a few
+points on sub-pixel rounding. Judge this knob on the other three, and on shape
+rather than overall; the `stats_multi_digit_tracking` column in `explain_knob`
+shows all four.
+
+Three digits are refused outright at load (`card::stat_error`) rather than
+rendered overflowing — there is no spacing a third digit fits in.
+
 ## Original line breaks
 
 The 1997 cards were broken by hand, not by a width rule — Sidar Kondo breaks after `+3/+3` with room to spare on the line. Where a card's true breaks are known, encode them as `\n` in its YAML; the auto-wrap is a fallback for new cards, and scoring against it measures the wrap heuristic rather than the rendering. All four reference cards carry their originals' breaks.

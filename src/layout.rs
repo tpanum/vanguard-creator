@@ -69,6 +69,20 @@ pub struct Layout {
     pub rules_centering_height: f32,
     /// Stats font size (points)
     pub stats_size: f32,
+    /// Letter spacing between the glyphs of a stat value of two or more digits,
+    /// in pixels. Negative pulls them together. One-digit values are set at the
+    /// font's own spacing: sweeping a tracking knob that applied to every value
+    /// peaked flat at 0.0, so the originals' `-4` is spaced as ours is.
+    ///
+    /// The bubble is a fixed circle and `+12` has to fit in it. What the
+    /// originals do is set the glyphs at full size and pull them together:
+    /// measured off the scans glyph by glyph (`tests/bubble_geometry.rs`), the
+    /// digits in `+10`, `+12` and `+15` are exactly as wide as the digits in
+    /// `+4` or `-8`, while the centre-to-centre advance between them is 3–4 px
+    /// shorter. Condensing the glyphs instead reaches the same bounding box by
+    /// thinning every vertical stem, which the printed cards plainly do not do,
+    /// and which F1 cannot see because it scores a binarized mask.
+    pub stats_multi_digit_tracking: f32,
     /// Narrower text box used for ability-text lines 4 and beyond, where the
     /// stat-bubble frames on either side reduce the available width.
     /// Derived from template pixel analysis:
@@ -141,6 +155,7 @@ pub const DEFAULT: Layout = Layout {
     line_height_factor: 1.25,
     rules_centering_height: 122.0,
     stats_size: 34.5,
+    stats_multi_digit_tracking: -3.75,
     narrow_text_box: Rect::new(144, 640, 574, 835),
     rules_min_y: 638.0,
     max_ability_lines: 8,

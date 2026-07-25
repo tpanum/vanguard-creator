@@ -534,6 +534,33 @@ fn blend(bg: &Rgba<u8>, fg: [u8; 3], coverage: f32) -> Rgba<u8> {
     Rgba([r, g, b, out_a])
 }
 
+/// How a run of glyphs is set: the size, and the letter spacing applied between
+/// adjacent glyphs. Carried together because a measurement and the draw it
+/// belongs to must agree on both, or the ink is measured at one spacing and put
+/// down at another.
+#[derive(Debug, Clone, Copy)]
+pub struct Run {
+    pub scale: PxScale,
+    /// Pixels added to the advance after every glyph but the last. Negative
+    /// pulls the glyphs together without touching their outlines, which is how
+    /// the stat bubbles fit two digits — see [`stats_tracking`].
+    pub tracking: f32,
+}
+
+impl Run {
+    /// A run at the font's own spacing.
+    pub fn new(scale: PxScale) -> Run {
+        Run {
+            scale,
+            tracking: 0.0,
+        }
+    }
+
+    pub fn tracked(scale: PxScale, tracking: f32) -> Run {
+        Run { scale, tracking }
+    }
+}
+
 /// Draw a string at a specific baseline position on the canvas.
 /// Returns the total advance width consumed.
 pub fn draw_text_at_baseline(
@@ -542,9 +569,10 @@ pub fn draw_text_at_baseline(
     pen_x: f32,
     baseline_y: f32,
     font: &FontRef,
-    scale: PxScale,
+    run: Run,
     pen: Pen,
 ) -> f32 {
+    let Run { scale, tracking } = run;
     let scaled = font.as_scaled(scale);
     let mut x = pen_x;
     let mut prev: Option<GlyphId> = None;
@@ -552,7 +580,7 @@ pub fn draw_text_at_baseline(
     for c in text.chars() {
         let gid = scaled.glyph_id(c);
         if let Some(p) = prev {
-            x += scaled.kern(p, gid);
+            x += scaled.kern(p, gid) + tracking;
         }
 
         let glyph = Glyph {
@@ -600,7 +628,8 @@ pub fn draw_text_at_baseline(
 /// descender space below them pushed the visible glyphs down.
 ///
 /// Returns `None` for a string that draws nothing (empty, or all whitespace).
-pub fn ink_bounds(text: &str, font: &FontRef, scale: PxScale) -> Option<(f32, f32, f32, f32)> {
+pub fn ink_bounds(text: &str, font: &FontRef, run: Run) -> Option<(f32, f32, f32, f32)> {
+    let Run { scale, tracking } = run;
     let scaled = font.as_scaled(scale);
     let mut x = 0.0f32;
     let mut prev: Option<GlyphId> = None;
@@ -609,7 +638,7 @@ pub fn ink_bounds(text: &str, font: &FontRef, scale: PxScale) -> Option<(f32, f3
     for c in text.chars() {
         let gid = scaled.glyph_id(c);
         if let Some(p) = prev {
-            x += scaled.kern(p, gid);
+            x += scaled.kern(p, gid) + tracking;
         }
         let glyph = Glyph {
             id: gid,
@@ -635,6 +664,21 @@ pub fn ink_bounds(text: &str, font: &FontRef, scale: PxScale) -> Option<(f32, f3
     bounds
 }
 
+/// Letter spacing for a hand or life modifier, in pixels.
+///
+/// A two-digit value has to fit the same circle a one-digit value does, and the
+/// originals make room by pulling the glyphs together rather than by narrowing
+/// or shrinking them — so this is a spacing adjustment, and `stats_size` is the
+/// same either way.
+pub fn stats_tracking(value: &str, layout: &Layout) -> f32 {
+    let digits = value.chars().filter(|c| c.is_ascii_digit()).count();
+    if digits > 1 {
+        layout.stats_multi_digit_tracking
+    } else {
+        0.0
+    }
+}
+
 /// Draw text so that the ink it lays down is centered on `(cx, cy)`.
 ///
 /// This is the right anchor for the hand and life modifiers: the target is a
@@ -651,16 +695,16 @@ pub fn draw_text_centered_on_ink(
     cx: u32,
     cy: u32,
     font: &FontRef,
-    scale: PxScale,
+    run: Run,
     pen: Pen,
 ) {
-    match ink_bounds(text, font, scale) {
+    match ink_bounds(text, font, run) {
         Some((x0, y0, x1, y1)) => {
             let pen_x = cx as f32 - (x0 + x1) / 2.0;
             let baseline_y = cy as f32 - (y0 + y1) / 2.0;
-            draw_text_at_baseline(canvas, text, pen_x, baseline_y, font, scale, pen);
+            draw_text_at_baseline(canvas, text, pen_x, baseline_y, font, run, pen);
         }
-        None => draw_text_centered_on_baseline(canvas, text, cx, cy, font, scale, pen),
+        None => draw_text_centered_on_baseline(canvas, text, cx, cy, font, run.scale, pen),
     }
 }
 
@@ -687,7 +731,7 @@ pub fn draw_text_centered_on_baseline(
     let pen_x = cx as f32 - measure_str(text, font, scale) / 2.0;
     let baseline_y = cy as f32 - (ascent + descent) / 2.0 + ascent;
 
-    draw_text_at_baseline(canvas, text, pen_x, baseline_y, font, scale, pen);
+    draw_text_at_baseline(canvas, text, pen_x, baseline_y, font, Run::new(scale), pen);
 }
 
 // ── Rules text block rendering ────────────────────────────────────────────────
@@ -816,7 +860,7 @@ fn draw_lines(
                         x,
                         baseline_y,
                         font,
-                        spec.scale,
+                        Run::new(spec.scale),
                         pen,
                     );
                 }

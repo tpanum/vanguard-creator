@@ -149,8 +149,8 @@ artwork: "artwork/goblin-king.png"
 |---|---|---|
 | `name` | yes | Card name displayed in the title banner. |
 | `ability` | yes | Rules text. Supports `{X}` mana notation and paragraph breaks via newlines. |
-| `hand` | yes | Starting hand size modifier (e.g. `+1`, `-2`, `+0`). |
-| `life` | yes | Starting life modifier. |
+| `hand` | yes | Starting hand size modifier (e.g. `+1`, `-2`, `+0`). One or two digits. |
+| `life` | yes | Starting life modifier (e.g. `+3`, `+12`, `-8`). One or two digits. |
 | `color` | yes | Colour of the gem in the bottom bezel — see [Gem Colour](#gem-colour). |
 | `artwork` | yes | Path to artwork image, resolved relative to the YAML file. |
 | `flavor` | no | Flavor text rendered below the ability text. **Currently poorly implemented — avoid using it until rendering is improved.** |
