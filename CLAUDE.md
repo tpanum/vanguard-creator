@@ -138,12 +138,6 @@ mv -f assets/examples/sliver_queen__brood_mother.png assets/examples/silverqueen
 mv -f assets/examples/sidar_kondo.png assets/examples/sidar.png
 ```
 
-`README.md` also shows `assets/examples/gem_colors.png`, a strip of the bottom bezel in all five gem colours, regenerated the same way:
-
-```sh
-cargo run --release --example gem_swatches
-```
-
 The renames are needed because output filenames come from the card name, while the README links to the shorter slugs. The samples are rendered from `tests/cards/*.yaml` on purpose, so they always show the same card data the accuracy suite scores — those four carry `flavor` text, which the suite drops but the samples need.
 
 Look at the result before committing. The F1 metric never sees the samples: it scores ability text only, on a blank canvas, so nothing in the suite will catch flavor text colliding with the stat bubbles, artwork cropping wrongly, or a symbol rendering at the wrong tone.
@@ -152,7 +146,7 @@ Look at the result before committing. The F1 metric never sees the samples: it s
 
 Every original carries a glossy sphere in the bottom bezel, and it is not always the same colour. Sampling the gem disc out of all 25 scans in `tests/assets/` puts the cards into four tight clusters — blue, green, red, white — so this is a real per-card property, recorded as a **required** `color:` field in each card's YAML. `src/gem.rs` recolours it.
 
-`GemColor` deliberately does not implement `Default`, and `CardDef::color` carries no `#[serde(default)]`. A card that omits the field is an error, not a blue card: blue is a real answer that is right for only a fifth of the set, so defaulting it would render the wrong gem silently instead of saying the card is incomplete. `parse-mse` has nothing in an `.mse-set` to derive the colour from, so it writes `blue` with a comment marking it for review — visible, not silent.
+`GemColor` is one of the five colours; `Gem` is what a card's field resolves to, either `Single` or `Dual`. Neither implements `Default`, and `CardDef::color` carries no `#[serde(default)]`. A card that omits the field is an error, not a blue card: blue is a real answer that is right for only a fifth of the set, so defaulting it would render the wrong gem silently instead of saying the card is incomplete. `parse-mse` has nothing in an `.mse-set` to derive the colour from, so it writes `blue` with a comment marking it for review — visible, not silent.
 
 The template is a blue card's, so **blue is the identity and is a strict no-op**. Every other colour is a hue rotation, saturation multiplier and value gamma away from it.
 
@@ -164,7 +158,19 @@ The clusters do **not** follow Magic colour identity — Serra's gem is green, V
 
 Black has no original in the suite. Its constants are a judgement call sitting alongside the measured four; only its gamma is solved, for a chosen body value of V ≈ 0.28.
 
-The accuracy suite does not see any of this: it scores text on a blank canvas with no template. The gem's correctness is checked by the unit tests in `src/gem.rs` (blue is byte-identical, nothing outside the disc changes, each colour lands in the right part of colour space) and by eye against `target/gem_fit.png`.
+### Two-colour gems
+
+`color:` also takes a pair — `wu`, `w/u`, `white/blue` — which grades the two colours into each other from left to right. No original has one; like black, this is an invention for custom cards, in the spirit of hybrid mana. Order is meaningful: `wu` and `uw` are mirror images.
+
+**Interpolate the two results, never the two transforms.** A transform is a hue *rotation*, so averaging white's −173.5° with red's +147.2° passes through 0° — which is blue, a colour neither half of the gem is. `recolor_blended` applies both transforms to each pixel and lerps the two RGB results, which cannot produce a colour that is not on the line between them.
+
+`BLEND_SPAN` (0.7 of the radius) sets how much of the sphere the gradient occupies. It must stay below 1.0 or neither colour ever reaches full strength and every pair reads as one muddy stone; the pairs to check it against are the ones close in value, `white/blue` and `black/green`. `cargo run --release --example gem_swatches` writes `target/gem_swatches.png` with all five singles and all ten pairs.
+
+A pair of the same colour twice must render identically to that colour alone, and a pair containing blue must *not* be a no-op even though blue alone is — both are unit tests.
+
+### What checks this
+
+The accuracy suite does not see any of it: it scores text on a blank canvas with no template. The gem's correctness rests on the unit tests in `src/gem.rs` — blue is byte-identical, nothing outside the disc changes, each colour lands in the right part of colour space, each half of a dual gem shows its own colour and mirroring the pair mirrors the render — and on looking at `target/gem_fit.png` and `target/gem_swatches.png`.
 
 ## Scryfall API
 
