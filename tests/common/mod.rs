@@ -301,7 +301,7 @@ pub const CARDS: &[CardSpec] = &[
             Some((0.63, 0.82)),
             Some((0.34, 0.47)),
             Some((0.28, 0.70)),
-            Some((0.34, 0.62)),
+            Some((0.58, 0.74)),
         ],
     },
     CardSpec {
@@ -381,7 +381,7 @@ pub const CARDS: &[CardSpec] = &[
             Some((0.54, 0.82)),
             Some((0.36, 0.49)),
             Some((0.65, 0.76)),
-            Some((0.41, 0.59)),
+            Some((0.57, 0.76)),
         ],
     },
     CardSpec {
@@ -421,7 +421,7 @@ pub const CARDS: &[CardSpec] = &[
             Some((0.49, 0.74)),
             Some((0.32, 0.50)),
             Some((0.60, 0.80)),
-            Some((0.45, 0.57)),
+            Some((0.78, 0.78)),
         ],
     },
     CardSpec {
@@ -501,7 +501,7 @@ pub const CARDS: &[CardSpec] = &[
             Some((0.75, 0.85)),
             Some((0.44, 0.62)),
             Some((0.50, 0.73)),
-            Some((0.35, 0.52)),
+            Some((0.79, 0.79)),
         ],
     },
     CardSpec {

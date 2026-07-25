@@ -9,7 +9,36 @@ use crate::gem::GemColor;
 
 static STAT_RE: OnceLock<Regex> = OnceLock::new();
 fn stat_re() -> &'static Regex {
-    STAT_RE.get_or_init(|| Regex::new(r"^[+-]\d+$").unwrap())
+    // ASCII digits only: `\d` also matches Unicode decimal digits, which the
+    // digit count below (and the stats font) would not handle.
+    STAT_RE.get_or_init(|| Regex::new(r"^[+-][0-9]+$").unwrap())
+}
+
+/// Most digits a hand or life modifier may have.
+///
+/// The bubbles are circles stamped on the template, and the widest value the
+/// originals ever had to fit is two digits — which they only managed by pulling
+/// the glyphs together (see `Layout::stats_multi_digit_tracking`). A third digit
+/// has nowhere to go: it would either overrun the circle or have to be squeezed
+/// past what tightening the spacing can buy. Rather than emit a card that
+/// misrepresents what the tool can render, we refuse the value.
+const STAT_MAX_DIGITS: usize = 2;
+
+/// Check one stat value, returning a message describing what is wrong with it.
+fn stat_error(field: &str, value: &str) -> Option<String> {
+    if !stat_re().is_match(value) {
+        return Some(format!(
+            "invalid '{field}' value: {value:?} (expected +N or -N)"
+        ));
+    }
+    let digits = value.chars().filter(|c| c.is_ascii_digit()).count();
+    if digits > STAT_MAX_DIGITS {
+        return Some(format!(
+            "'{field}' value {value:?} has {digits} digits; the stat bubble holds \
+             at most {STAT_MAX_DIGITS}"
+        ));
+    }
+    None
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,7 +62,19 @@ impl CardDef {
         let mut card: Self = serde_yaml::from_str(&text)
             .with_context(|| format!("parsing YAML in {}", yaml_path.display()))?;
         card.artwork = resolve_artwork(yaml_path, &card.artwork);
+        card.check_stats()?;
         Ok(card)
+    }
+
+    /// Reject a card whose hand or life modifier cannot be set in its bubble.
+    /// Rendering is refused outright rather than producing an overflowing card.
+    fn check_stats(&self) -> Result<()> {
+        for (field, value) in [("hand", &self.hand), ("life", &self.life)] {
+            if let Some(msg) = stat_error(field, value) {
+                bail!(msg);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -101,10 +142,8 @@ pub fn validate_file(yaml_path: &Path) -> Vec<ValidationIssue> {
 
     for stat in &["hand", "life"] {
         if let Some(val) = data.get(stat).and_then(|v| v.as_str()) {
-            if !stat_re().is_match(val) {
-                issue(format!(
-                    "invalid '{stat}' value: {val:?} (expected +N or -N)"
-                ));
+            if let Some(msg) = stat_error(stat, val) {
+                issue(msg);
             }
         }
     }
@@ -236,6 +275,28 @@ mod tests {
         );
 
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn stat_values_of_one_or_two_digits_are_accepted() {
+        for v in ["+0", "-4", "+10", "+15", "-12"] {
+            assert_eq!(stat_error("life", v), None, "{v} should be accepted");
+        }
+    }
+
+    #[test]
+    fn stat_values_of_three_or_more_digits_are_rejected() {
+        for v in ["+100", "-100", "+123", "-1000"] {
+            let msg = stat_error("life", v).unwrap_or_else(|| panic!("{v} should be rejected"));
+            assert!(msg.contains("at most 2"), "unexpected message: {msg}");
+        }
+    }
+
+    #[test]
+    fn malformed_stat_values_are_rejected() {
+        for v in ["", "4", "++4", "+4x", "+ 4"] {
+            assert!(stat_error("hand", v).is_some(), "{v:?} should be rejected");
+        }
     }
 
     #[test]

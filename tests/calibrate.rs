@@ -247,6 +247,16 @@ fn knobs() -> Vec<Knob> {
             span: 10.0,
             step: 0.5,
         },
+        // Only the four two-digit life totals can move with this one, so its
+        // mean is over four cases and worth reading per card before trusting.
+        Knob {
+            name: "stats_multi_digit_tracking",
+            elements: RIGHT,
+            get: |l| l.stats_multi_digit_tracking as f64,
+            set: |l, v| l.stats_multi_digit_tracking = v as f32,
+            span: 6.0,
+            step: 0.25,
+        },
     ]
 }
 

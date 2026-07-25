@@ -29,6 +29,10 @@ pub fn run(
     let fonts = Fonts::load()?;
     let multi = yaml_files.len() > 1;
 
+    // A card the loader rejects is skipped so the rest of a batch still
+    // renders, but the run as a whole fails — nothing was written for it.
+    let mut refused = 0usize;
+
     for yaml_path in &yaml_files {
         let card = match CardDef::load(yaml_path) {
             Ok(c) => c,
@@ -36,7 +40,8 @@ pub fn run(
                 // `{e:#}` prints the cause chain — without it a card rejected
                 // for a missing or unknown field reports only "parsing YAML in
                 // <path>", which names the file but not what is wrong with it.
-                eprintln!("warning: skipping {}: {e:#}", yaml_path.display());
+                eprintln!("error: refusing {}: {e:#}", yaml_path.display());
+                refused += 1;
                 continue;
             }
         };
@@ -62,6 +67,10 @@ pub fn run(
                 eprintln!("warning: failed to render {}: {e:#}", card.name);
             }
         }
+    }
+
+    if refused > 0 {
+        bail!("{refused} card definition(s) refused; see the errors above");
     }
 
     Ok(())
@@ -214,7 +223,10 @@ pub fn draw_stat(
         cx,
         cy,
         font,
-        PxScale::from(layout.stats_size),
+        text::Run::tracked(
+            PxScale::from(layout.stats_size),
+            text::stats_tracking(value, layout),
+        ),
         text::Pen::new(BLACK, layout.ink_gain),
     );
 }
