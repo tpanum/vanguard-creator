@@ -33,12 +33,14 @@ use crate::layout::Layout;
 ///
 /// Deserialization goes through [`FromStr`], so YAML accepts exactly what the
 /// `validate` command accepts — including the Magic letters and any casing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+/// Deliberately not [`Default`]. Every card states its gem colour, so there is
+/// no colour to fall back to — a card that omits it is an error, not a blue
+/// card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
 pub enum GemColor {
     White,
     /// The colour the bundled template already carries — the identity transform.
-    #[default]
     Blue,
     Black,
     Red,

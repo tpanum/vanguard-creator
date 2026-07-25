@@ -20,9 +20,9 @@ pub struct CardDef {
     pub hand: String,
     pub life: String,
     pub artwork: PathBuf,
-    /// Colour of the gem in the bottom bezel. Omitted means blue, which is
-    /// what the bundled template already carries.
-    #[serde(default)]
+    /// Colour of the gem in the bottom bezel. Required: it is a property of
+    /// the card that nothing else can be derived from, and defaulting it
+    /// silently renders the wrong gem rather than saying so.
     pub color: GemColor,
 }
 
@@ -93,7 +93,7 @@ pub fn validate_file(yaml_path: &Path) -> Vec<ValidationIssue> {
         }
     };
 
-    for field in &["name", "ability", "hand", "life", "artwork"] {
+    for field in &["name", "ability", "hand", "life", "color", "artwork"] {
         if data.get(field).is_none() {
             issue(format!("missing required field '{field}'"));
         }
@@ -213,6 +213,30 @@ pub fn validate_cmd(paths: &[PathBuf], recursive: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `color` is required, and `validate` must say so — otherwise the first
+    /// sign of it is `create` skipping the card.
+    #[test]
+    fn validate_reports_a_missing_color() {
+        let dir = std::env::temp_dir().join("vgc_validate_color");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("nocolor.yaml");
+        std::fs::write(
+            &path,
+            "name: \"X\"\nability: \"a\"\nhand: \"-1\"\nlife: \"+0\"\nartwork: \"a.png\"\n",
+        )
+        .unwrap();
+
+        let issues = validate_file(&path);
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.message.contains("missing required field 'color'")),
+            "got {issues:?}"
+        );
+
+        std::fs::remove_file(&path).unwrap();
+    }
 
     #[test]
     fn test_sanitize_filename() {

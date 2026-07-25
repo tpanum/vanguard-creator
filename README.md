@@ -58,6 +58,8 @@ vgc parse-mse <file.mse-set> [flags]
 | `--artwork-dir <name>` | Subdirectory name for extracted artwork. Default: `artwork`. |
 | `--overwrite` | Overwrite existing files. Default: skip if YAML already exists. |
 
+An `.mse-set` carries nothing that says what colour a card's gem is, so every imported card is written as `color: "blue"` with a comment marking it for review. Check it against the card before rendering.
+
 ### `vgc print`
 
 Arrange card images into a multi-page, print-ready PDF.
@@ -149,13 +151,13 @@ artwork: "artwork/goblin-king.png"
 | `ability` | yes | Rules text. Supports `{X}` mana notation and paragraph breaks via newlines. |
 | `hand` | yes | Starting hand size modifier (e.g. `+1`, `-2`, `+0`). |
 | `life` | yes | Starting life modifier. |
+| `color` | yes | Colour of the gem in the bottom bezel — see [Gem Colour](#gem-colour). |
 | `artwork` | yes | Path to artwork image, resolved relative to the YAML file. |
-| `color` | no | Colour of the gem in the bottom bezel — see [Gem Colour](#gem-colour). Default: `blue`. |
 | `flavor` | no | Flavor text rendered below the ability text. **Currently poorly implemented — avoid using it until rendering is improved.** |
 
 ### Gem Colour
 
-Every Vanguard card carries a small glossy sphere set into the bottom of the frame, and the originals do not all use the same colour. Set it with `color`, which accepts either the colour name or its Magic letter:
+Every Vanguard card carries a small glossy sphere set into the bottom of the frame, and the originals do not all use the same colour. `color` is required — there is no colour to fall back to, and defaulting it would render the wrong gem instead of telling you the card is incomplete. It accepts either the colour name or its Magic letter, in any casing:
 
 | `color` | Aliases |
 |---|---|
@@ -169,7 +171,7 @@ Every Vanguard card carries a small glossy sphere set into the bottom of the fra
 
 <p align="center"><em>White, blue, black, red, green.</em></p>
 
-Blue is the default, because that is what the bundled template already carries. The other transforms are fitted against the original scans in `tests/assets/`: sampling the gem out of all 25 puts them into four tight clusters — blue, green, red and white — and `cargo run --release --example fit_gem` searches for the hue, saturation and value constants that reproduce each cluster's mean, printing them alongside a magnified render-vs-original comparison. Black is the one colour with no original to fit against, so its constants are chosen to sit plausibly alongside the measured four.
+Blue is what the bundled template already carries, so it is the one colour that renders untouched. The other transforms are fitted against the original scans in `tests/assets/`: sampling the gem out of all 25 puts them into four tight clusters — blue, green, red and white — and `cargo run --release --example fit_gem` searches for the hue, saturation and value constants that reproduce each cluster's mean, printing them alongside a magnified render-vs-original comparison. Black is the one colour with no original to fit against, so its constants are chosen to sit plausibly alongside the measured four.
 
 The recolour is a hue rotation applied per pixel inside the gem disc, so the sphere keeps its own shading, its specular highlight, and the warm light bouncing up into it off the bezel — which stays warm whatever colour the gem is.
 

@@ -33,7 +33,10 @@ pub fn run(
         let card = match CardDef::load(yaml_path) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("warning: skipping {}: {e}", yaml_path.display());
+                // `{e:#}` prints the cause chain — without it a card rejected
+                // for a missing or unknown field reports only "parsing YAML in
+                // <path>", which names the file but not what is wrong with it.
+                eprintln!("warning: skipping {}: {e:#}", yaml_path.display());
                 continue;
             }
         };
@@ -56,7 +59,7 @@ pub fn run(
                 println!("Saved: {}", out_path.display());
             }
             Err(e) => {
-                eprintln!("warning: failed to render {}: {e}", card.name);
+                eprintln!("warning: failed to render {}: {e:#}", card.name);
             }
         }
     }
