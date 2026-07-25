@@ -66,6 +66,7 @@ pub struct Ctx {
     pub layout: Layout,
     pub name_font: FontRef<'static>,
     pub body_font: FontRef<'static>,
+    pub stats_font: FontRef<'static>,
 }
 
 impl Ctx {
@@ -76,6 +77,7 @@ impl Ctx {
             layout: DEFAULT.clone(),
             name_font: fonts.name,
             body_font: fonts.body,
+            stats_font: fonts.stats,
         }
     }
 
@@ -114,7 +116,7 @@ pub fn render_left_bubble(yaml_path: &str, ctx: &Ctx) -> RgbaImage {
         &mut canvas,
         &card.hand,
         ctx.layout.hand_center,
-        &ctx.body_font,
+        &ctx.stats_font,
         &ctx.layout,
     );
     flatten_alpha(&mut canvas);
@@ -128,7 +130,7 @@ pub fn render_right_bubble(yaml_path: &str, ctx: &Ctx) -> RgbaImage {
         &mut canvas,
         &card.life,
         ctx.layout.life_center,
-        &ctx.body_font,
+        &ctx.stats_font,
         &ctx.layout,
     );
     flatten_alpha(&mut canvas);
@@ -213,10 +215,9 @@ pub struct Case {
     pub slug: &'static str,
     pub card: &'static str,
     pub element: Element,
-    /// Minimum acceptable F1. `None` means the case is scored and reported but
-    /// not gated — used for cards added to widen coverage before their
-    /// thresholds have been reviewed.
-    pub threshold: Option<f64>,
+    /// Minimum acceptable `(overall, shape)` F1, or `None` to score and report
+    /// the case without gating it.
+    pub threshold: Option<(f64, f64)>,
 }
 
 impl Case {
@@ -256,135 +257,272 @@ impl Case {
 pub struct CardSpec {
     pub slug: &'static str,
     pub name: &'static str,
-    /// Floors for title, rules, left bubble, right bubble.
-    pub thresholds: [Option<f64>; 4],
+    /// `(overall, shape)` floors for title, rules, left bubble, right bubble.
+    ///
+    /// Two numbers because they fail for different reasons. **Overall** is the
+    /// old score: does this element land on the card where the original's does,
+    /// at the right size, in the right letterforms — everything at once.
+    /// **Shape** is measured after the best translation and uniform scale have
+    /// been applied, so placement is factored out and what is left is the
+    /// rendering itself: the typeface, its weight, and where the lines break.
+    ///
+    /// Watching both separates causes that a single number confounds. A change
+    /// that moves a text box shifts overall and leaves shape alone; a change of
+    /// font moves shape. A drop in overall with shape steady is a layout
+    /// regression, and the reverse is a rendering regression.
+    pub thresholds: [Option<(f64, f64)>; 4],
 }
 
 pub const CARDS: &[CardSpec] = &[
     CardSpec {
         slug: "ashnod",
         name: "Ashnod",
-        thresholds: [Some(0.59), Some(0.71), Some(0.71), Some(0.70)],
+        thresholds: [
+            Some((0.55, 0.74)),
+            Some((0.62, 0.72)),
+            Some((0.62, 0.73)),
+            Some((0.80, 0.80)),
+        ],
     },
     CardSpec {
         slug: "crovax",
         name: "Crovax",
-        thresholds: [Some(0.72), Some(0.47), Some(0.56), Some(0.65)],
+        thresholds: [
+            Some((0.73, 0.87)),
+            Some((0.39, 0.65)),
+            Some((0.50, 0.74)),
+            Some((0.71, 0.82)),
+        ],
     },
     CardSpec {
         slug: "eladamri",
         name: "Eladamri",
-        thresholds: [Some(0.62), Some(0.38), Some(0.55), Some(0.44)],
+        thresholds: [
+            Some((0.63, 0.82)),
+            Some((0.34, 0.47)),
+            Some((0.28, 0.70)),
+            Some((0.34, 0.62)),
+        ],
     },
     CardSpec {
         slug: "ertai",
         name: "Ertai",
-        thresholds: [Some(0.58), Some(0.43), Some(0.62), Some(0.58)],
+        thresholds: [
+            Some((0.57, 0.86)),
+            Some((0.38, 0.51)),
+            Some((0.77, 0.81)),
+            Some((0.60, 0.77)),
+        ],
     },
     CardSpec {
         slug: "gerrard",
         name: "Gerrard",
-        thresholds: [Some(0.73), Some(0.38), Some(0.46), Some(0.48)],
+        thresholds: [
+            Some((0.71, 0.76)),
+            Some((0.34, 0.55)),
+            Some((0.34, 0.80)),
+            Some((0.41, 0.82)),
+        ],
     },
     CardSpec {
         slug: "hanna",
         name: "Hanna",
-        thresholds: [Some(0.76), Some(0.36), Some(0.65), Some(0.57)],
+        thresholds: [
+            Some((0.76, 0.88)),
+            Some((0.30, 0.51)),
+            Some((0.60, 0.77)),
+            Some((0.72, 0.83)),
+        ],
     },
     CardSpec {
         slug: "maraxus",
         name: "Maraxus",
-        thresholds: [Some(0.75), Some(0.28), Some(0.57), Some(0.72)],
+        thresholds: [
+            Some((0.72, 0.81)),
+            Some((0.25, 0.64)),
+            Some((0.65, 0.70)),
+            Some((0.70, 0.76)),
+        ],
     },
     CardSpec {
         slug: "mishra",
         name: "Mishra",
-        thresholds: [Some(0.56), Some(0.42), Some(0.54), Some(0.48)],
+        thresholds: [
+            Some((0.55, 0.79)),
+            Some((0.41, 0.68)),
+            Some((0.48, 0.68)),
+            Some((0.38, 0.83)),
+        ],
     },
     CardSpec {
         slug: "multani",
         name: "Multani",
-        thresholds: [Some(0.72), Some(0.46), Some(0.74), Some(0.53)],
+        thresholds: [
+            Some((0.74, 0.80)),
+            Some((0.39, 0.45)),
+            Some((0.70, 0.79)),
+            Some((0.32, 0.83)),
+        ],
     },
     CardSpec {
         slug: "oracle",
         name: "Oracle",
-        thresholds: [Some(0.77), Some(0.38), Some(0.62), Some(0.47)],
+        thresholds: [
+            Some((0.75, 0.81)),
+            Some((0.35, 0.52)),
+            Some((0.56, 0.77)),
+            Some((0.48, 0.70)),
+        ],
     },
     CardSpec {
         slug: "orim",
         name: "Orim",
-        thresholds: [Some(0.56), Some(0.37), Some(0.50), Some(0.53)],
+        thresholds: [
+            Some((0.54, 0.82)),
+            Some((0.36, 0.49)),
+            Some((0.65, 0.76)),
+            Some((0.41, 0.59)),
+        ],
     },
     CardSpec {
         slug: "rofellos",
         name: "Rofellos",
-        thresholds: [Some(0.68), Some(0.43), Some(0.25), Some(0.36)],
+        thresholds: [
+            Some((0.68, 0.73)),
+            Some((0.44, 0.52)),
+            Some((0.14, 0.81)),
+            Some((0.29, 0.73)),
+        ],
     },
     CardSpec {
         slug: "selenia",
         name: "Selenia",
-        thresholds: [Some(0.30), Some(0.27), Some(0.57), Some(0.58)],
+        thresholds: [
+            Some((0.31, 0.74)),
+            Some((0.31, 0.35)),
+            Some((0.56, 0.71)),
+            Some((0.61, 0.77)),
+        ],
     },
     CardSpec {
         slug: "serra",
         name: "Serra",
-        thresholds: [Some(0.63), Some(0.40), Some(0.64), Some(0.54)],
+        thresholds: [
+            Some((0.61, 0.77)),
+            Some((0.37, 0.58)),
+            Some((0.55, 0.72)),
+            Some((0.68, 0.75)),
+        ],
     },
     CardSpec {
         slug: "sidarkondo",
         name: "Sidar Kondo",
-        thresholds: [Some(0.54), Some(0.36), Some(0.77), Some(0.54)],
+        thresholds: [
+            Some((0.49, 0.74)),
+            Some((0.32, 0.50)),
+            Some((0.60, 0.80)),
+            Some((0.45, 0.57)),
+        ],
     },
     CardSpec {
         slug: "silverqueen",
         name: "Sliver Queen, Brood Mother",
-        thresholds: [Some(0.59), Some(0.38), Some(0.51), Some(0.47)],
+        thresholds: [
+            Some((0.58, 0.69)),
+            Some((0.35, 0.46)),
+            Some((0.68, 0.78)),
+            Some((0.57, 0.73)),
+        ],
     },
     CardSpec {
         slug: "sisay",
         name: "Sisay",
-        thresholds: [Some(0.55), Some(0.38), Some(0.71), Some(0.64)],
+        thresholds: [
+            Some((0.55, 0.82)),
+            Some((0.36, 0.49)),
+            Some((0.71, 0.83)),
+            Some((0.47, 0.79)),
+        ],
     },
     CardSpec {
         slug: "starke",
         name: "Starke",
-        thresholds: [Some(0.80), Some(0.43), Some(0.48), Some(0.53)],
+        thresholds: [
+            Some((0.80, 0.80)),
+            Some((0.40, 0.44)),
+            Some((0.60, 0.78)),
+            Some((0.54, 0.83)),
+        ],
     },
     CardSpec {
         slug: "tahngarth",
         name: "Tahngarth",
-        thresholds: [Some(0.58), Some(0.54), Some(0.62), Some(0.56)],
+        thresholds: [
+            Some((0.55, 0.75)),
+            Some((0.54, 0.65)),
+            Some((0.77, 0.80)),
+            Some((0.63, 0.74)),
+        ],
     },
     CardSpec {
         slug: "takara",
         name: "Takara",
-        thresholds: [Some(0.70), Some(0.41), Some(0.53), Some(0.70)],
+        thresholds: [
+            Some((0.71, 0.79)),
+            Some((0.37, 0.47)),
+            Some((0.63, 0.70)),
+            Some((0.77, 0.83)),
+        ],
     },
     CardSpec {
         slug: "tawnos",
         name: "Tawnos",
-        thresholds: [Some(0.72), Some(0.55), Some(0.64), Some(0.78)],
+        thresholds: [
+            Some((0.69, 0.78)),
+            Some((0.51, 0.58)),
+            Some((0.57, 0.70)),
+            Some((0.69, 0.82)),
+        ],
     },
     CardSpec {
         slug: "titania",
         name: "Titania",
-        thresholds: [Some(0.46), Some(0.43), Some(0.65), Some(0.64)],
+        thresholds: [
+            Some((0.46, 0.66)),
+            Some((0.42, 0.49)),
+            Some((0.76, 0.80)),
+            Some((0.64, 0.74)),
+        ],
     },
     CardSpec {
         slug: "urza",
         name: "Urza",
-        thresholds: [Some(0.77), Some(0.47), Some(0.76), Some(0.42)],
+        thresholds: [
+            Some((0.75, 0.85)),
+            Some((0.44, 0.62)),
+            Some((0.50, 0.73)),
+            Some((0.35, 0.52)),
+        ],
     },
     CardSpec {
         slug: "volrath",
         name: "Volrath",
-        thresholds: [Some(0.68), Some(0.41), Some(0.71), Some(0.56)],
+        thresholds: [
+            Some((0.67, 0.78)),
+            Some((0.37, 0.52)),
+            Some((0.68, 0.78)),
+            Some((0.67, 0.83)),
+        ],
     },
     CardSpec {
         slug: "xantcha",
         name: "Xantcha",
-        thresholds: [Some(0.60), Some(0.58), Some(0.76), Some(0.61)],
+        thresholds: [
+            Some((0.61, 0.83)),
+            Some((0.58, 0.68)),
+            Some((0.73, 0.76)),
+            Some((0.64, 0.65)),
+        ],
     },
 ];
 
@@ -712,9 +850,10 @@ impl Diagnosis {
 
         let _ = writeln!(
             out,
-            "{:<28} F1 {:5.1}%   (P {:5.1}%  R {:5.1}%)",
+            "{:<28} overall F1 {:5.1}%   shape F1 {:5.1}%   (P {:5.1}%  R {:5.1}%)",
             case.label(),
             pct(self.raw.f1),
+            pct(self.aligned.f1),
             pct(self.raw.precision),
             pct(self.raw.recall),
         );
@@ -778,7 +917,7 @@ impl Diagnosis {
         let (dx, dy) = self.shift;
         let _ = writeln!(
             out,
-            "    alignment  best shift dx {dx:+} dy {dy:+}  →  F1 {:5.1}% ({:+.1})",
+            "    placement  best shift dx {dx:+} dy {dy:+}  →  F1 {:5.1}% ({:+.1})",
             pct(self.shifted.f1),
             pct(self.shifted.f1 - self.raw.f1),
         );
@@ -791,7 +930,9 @@ impl Diagnosis {
         );
         let _ = writeln!(
             out,
-            "    residual   {:.1}% of the mismatch is glyph shape / weight / line breaks",
+            "    shape      {:.1}% matched after alignment; the {:.1}% missing is \
+             typeface, weight or line breaks",
+            pct(self.aligned.f1),
             pct(self.shape_error()),
         );
 
@@ -1010,13 +1151,24 @@ pub fn run_case(case: &Case) {
         );
     }
 
-    if let Some(threshold) = case.threshold {
+    if let Some((overall, shape)) = case.threshold {
         assert!(
-            diag.raw.f1 >= threshold,
-            "{} text F1 is {:.1}% — below threshold {:.1}%\n{}",
+            diag.raw.f1 >= overall,
+            "{} overall F1 is {:.1}% — below threshold {:.1}%. \
+             Placement, size or rendering regressed.\n{}",
             case.label(),
             diag.raw.f1 * 100.0,
-            threshold * 100.0,
+            overall * 100.0,
+            diag.report(case),
+        );
+        assert!(
+            diag.aligned.f1 >= shape,
+            "{} shape F1 is {:.1}% — below threshold {:.1}%. \
+             The letterforms themselves regressed: this score already has the best \
+             translation and scale applied, so it cannot be explained by placement.\n{}",
+            case.label(),
+            diag.aligned.f1 * 100.0,
+            shape * 100.0,
             diag.report(case),
         );
     }

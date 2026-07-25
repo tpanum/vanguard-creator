@@ -152,14 +152,14 @@ pub fn render_card(
         &mut canvas,
         &card.hand,
         layout.hand_center,
-        &fonts.body,
+        &fonts.stats,
         layout,
     );
     draw_stat(
         &mut canvas,
         &card.life,
         layout.life_center,
-        &fonts.body,
+        &fonts.stats,
         layout,
     );
 

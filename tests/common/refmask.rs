@@ -78,11 +78,50 @@ pub fn region(element: Element) -> Region {
 /// next band is flavor text, which the accuracy suite does not render.
 const ABILITY_PITCH: u32 = 30;
 
-/// Ink is `luma < local_background × INK_RATIO`. A local background rather than
-/// a global threshold, because the parchment is textured and shades unevenly
-/// across the text box, and because the name banner is a gold gradient running
-/// from near-white to mid-brown across the same line of type.
-const INK_RATIO: f32 = 0.74;
+/// Ink is decided on `luma / local_background`, so a textured parchment and a
+/// gold banner running from near-white to mid-brown can share one rule. The
+/// split point on that ratio is chosen per region by Otsu.
+///
+/// The threshold must land halfway between paper and ink, because that is where
+/// our own renders are binarized — a glyph pixel counts as ink at 50% coverage.
+/// An earlier version used a fixed `luma < background × 0.74`, which on the
+/// stat bubbles put the boundary at luma 105 when paper is 142 and ink is 9:
+/// far up the blurred shoulder of every stroke, so the mask recorded strokes
+/// substantially fatter than the card's. That silently corrupted two decisions
+/// downstream — it ranked MPlantin Bold above Regular for the bubbles, and it
+/// pulled `ink_gain` down to thicken the render toward a phantom weight.
+/// Anything that changes where this boundary sits invalidates both.
+fn ink_threshold(norm: &[u8]) -> u8 {
+    let n = norm.len() as f64;
+    let mut hist = [0u64; 256];
+    for &v in norm {
+        hist[v as usize] += 1;
+    }
+    let total_mean: f64 = hist
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| i as f64 * c as f64)
+        .sum::<f64>()
+        / n;
+    let (mut best_t, mut best_var) = (0usize, 0.0f64);
+    let (mut w0, mut sum0) = (0.0f64, 0.0f64);
+    for (t, &count) in hist.iter().enumerate() {
+        w0 += count as f64 / n;
+        sum0 += t as f64 * count as f64 / n;
+        let w1 = 1.0 - w0;
+        if w0 <= 0.0 || w1 <= 0.0 {
+            continue;
+        }
+        let mean0 = sum0 / w0;
+        let mean1 = (total_mean - sum0) / w1;
+        let var = w0 * w1 * (mean0 - mean1).powi(2);
+        if var > best_var {
+            best_var = var;
+            best_t = t;
+        }
+    }
+    best_t as u8
+}
 
 /// Radius, in scan pixels, of the box filter that estimates local background.
 /// Must be comfortably wider than a glyph stroke so the background estimate is
@@ -309,11 +348,16 @@ pub fn segment(scan: &RgbaImage, region: &Region) -> Vec<((u32, u32), bool)> {
     let bg = box_blur(&gray, BG_RADIUS);
 
     let (cw, ch) = (gray.width(), gray.height());
-    let mut ink: Vec<bool> = gray
+    // Flatten the uneven background out of the way, then split paper from ink
+    // on the flattened image. 255 is "as light as its surroundings"; ink runs
+    // far below that whatever the surroundings happen to be.
+    let norm: Vec<u8> = gray
         .pixels()
         .zip(bg.iter())
-        .map(|(p, &b)| (p[0] as f32) < b * INK_RATIO)
+        .map(|(p, &b)| ((p[0] as f32 / b.max(1.0)) * 255.0).clamp(0.0, 255.0) as u8)
         .collect();
+    let threshold = ink_threshold(&norm);
+    let mut ink: Vec<bool> = norm.iter().map(|&v| v < threshold).collect();
     drop_frame_and_speck_components(&mut ink, cw, ch);
 
     // Area-average the native-resolution binary down into template pixels.

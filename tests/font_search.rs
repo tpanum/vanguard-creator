@@ -22,7 +22,7 @@ mod common;
 use ab_glyph::FontRef;
 use vgc::layout::{Layout, DEFAULT};
 
-use common::{cases, text_f1, to_binary, Case, Ctx, Element};
+use common::{cases, text_f1, to_binary, Case, Ctx, Diagnosis, Element};
 
 struct Candidate {
     name: String,
@@ -49,9 +49,9 @@ fn candidates() -> Vec<Candidate> {
             .filter_map(Result::ok)
             .map(|e| e.path())
             .filter(|p| {
-                p.extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "ttf" | "otf"))
+                p.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                    matches!(e.to_ascii_lowercase().as_str(), "ttf" | "otf" | "ttc")
+                })
             })
             .collect();
         entries.sort();
@@ -84,6 +84,25 @@ impl Refs {
         text_f1(&got, case.reference()).2
     }
 
+    /// Mean F1 *after* the best translation and uniform scale is applied.
+    ///
+    /// Raw F1 at this size is dominated by where the ink is and how much of it
+    /// there is, which barely separates two faces of similar weight. Aligning
+    /// first removes position and size from the comparison and leaves the thing
+    /// actually being chosen: the shape of the letterforms.
+    fn mean_aligned(&self, ctx: &Ctx, elements: &[Element]) -> f64 {
+        let v: Vec<f64> = cases()
+            .iter()
+            .filter(|c| elements.contains(&c.element))
+            .map(|c| {
+                let rendered = c.element.render_with(&c.yaml(), ctx);
+                let got = to_binary(&rendered, 128, true);
+                Diagnosis::new(&got, c.reference()).aligned.f1
+            })
+            .collect();
+        v.iter().sum::<f64>() / v.len() as f64
+    }
+
     fn mean(&self, ctx: &Ctx, elements: &[Element]) -> f64 {
         let v: Vec<f64> = cases()
             .iter()
@@ -100,11 +119,26 @@ fn ctx_with(
     body: Option<&FontRef<'static>>,
     name: Option<&FontRef<'static>>,
 ) -> Ctx {
+    ctx_with_stats(layout, body, name, None)
+}
+
+/// Build a Ctx that differs from production only in the fields under test.
+fn ctx_with_stats(
+    mut layout: Layout,
+    body: Option<&FontRef<'static>>,
+    name: Option<&FontRef<'static>>,
+    stats: Option<&FontRef<'static>>,
+) -> Ctx {
+    // Compare faces at their own natural weight. `ink_gain` exists to model the
+    // press, not the typeface; leaving it applied would flatter whichever face
+    // happens to suit the gain the current layout was tuned with.
+    layout.ink_gain = 1.0;
     let base = Ctx::production();
     Ctx {
         layout,
         body_font: body.cloned().unwrap_or(base.body_font),
         name_font: name.cloned().unwrap_or(base.name_font),
+        stats_font: stats.cloned().unwrap_or(base.stats_font),
     }
 }
 
@@ -199,6 +233,57 @@ fn search_body_font() {
     println!(
         "\nproduction body font is Mplantin-Bold. 'best' columns re-fit the size knob \
          per face,\nso a face is not penalised merely for having different metrics.\n"
+    );
+}
+
+/// Which face are the hand and life modifiers set in?
+///
+/// Reported on shape rather than raw overlap, and at each face's own best size,
+/// because the numerals are only a couple of dozen pixels tall: at that size
+/// two different faces of similar weight score almost identically on raw F1
+/// while looking plainly different on the card.
+///
+///   FONT_DIR=... cargo test --release --test font_search -- --ignored search_bubble_font --nocapture
+#[test]
+#[ignore]
+fn search_bubble_font() {
+    let refs = Refs::load();
+    const BUBBLES: &[Element] = &[Element::LeftBubble, Element::RightBubble];
+    let sizes: Vec<f64> = (0..=32).map(|i| 24.0 + i as f64 * 0.5).collect();
+
+    println!(
+        "\n{:<28} {:>12} {:>10} {:>14}",
+        "bubble font candidate", "@stats_size", "raw F1", "shape F1"
+    );
+    println!("{}", "─".repeat(68));
+
+    let mut ranked: Vec<(f64, String, f64, f64)> = Vec::new();
+    for c in candidates() {
+        let mut best = (f64::NAN, -1.0, -1.0);
+        for &size in &sizes {
+            let mut layout = DEFAULT.clone();
+            layout.stats_size = size as f32;
+            let ctx = ctx_with_stats(layout, None, None, Some(&c.font));
+            let shape = refs.mean_aligned(&ctx, BUBBLES);
+            if shape > best.2 {
+                best = (size, refs.mean(&ctx, BUBBLES), shape);
+            }
+        }
+        ranked.push((best.2, c.name.clone(), best.0, best.1));
+    }
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+    for (shape, name, size, raw) in ranked {
+        println!(
+            "{:<28} {:>12.1} {:>9.1}% {:>13.1}%",
+            name,
+            size,
+            raw * 100.0,
+            shape * 100.0
+        );
+    }
+    println!(
+        "\nShape F1 is measured after the best shift and scale, so it compares \n\
+         letterforms rather than placement. Production uses Mplantin-Bold.\n"
     );
 }
 

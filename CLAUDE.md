@@ -17,6 +17,17 @@ The suite covers all 25 cards in `tests/assets/`, four elements each. The method
 3. Binarize the render at luma < 128 (dark pixels = text).
 4. Compute precision, recall, and F1 over the binary text-pixel masks.
 
+### Two scores, not one
+
+Every case is gated on a pair:
+
+- **overall F1** — placement and rendering together. The original single score.
+- **shape F1** — the same comparison after the best translation and uniform scale have been applied, so placement is factored out and what remains is the rendering itself: typeface, weight, line breaking.
+
+They fail for different reasons, and that is the point. Moving a text box changes overall and leaves shape alone; changing a font moves shape. A drop in overall with shape steady is a layout regression; the reverse is a rendering regression. One number confounds the two, which is how a font error can hide behind a compensating offset — the calibrator will happily buy one with the other if you let it.
+
+Shape F1 is also the right metric for choosing a typeface. At these sizes raw overlap is dominated by how much ink lands where, which barely separates two faces of similar weight: picking the stat-bubble face on overall F1 chose MPlantin Bold, and on shape F1 chose Fremont, which is the one that matches the printed card.
+
 ### Reference masks
 
 No mask is stored on disk. `tests/common/refmask.rs` segments all four regions out of the card scan at test time — local-background threshold at native resolution, frame and speckle components dropped, area-correct downsample to 718×1024 — and memoises the result. A mask is therefore a pure function of two version-controlled inputs: the scan and that file.
@@ -89,6 +100,14 @@ The API reliably provides:
 - `flavor_text` — lore text on the card
 
 **Do NOT use `oracle_text` for the rules text.** Scryfall only stores modernized oracle text (e.g. "from the battlefield" instead of the original "from play"), which differs from what is printed on the physical cards and shown in the reference masks. Rules text must be sourced from card scans or other references to the original printed wording.
+
+## Which face goes where
+
+- **Card name** — Fremont Regular.
+- **Rules and flavor text** — MPlantin Bold. Confirmed against the scans; every alternative tried scored well below it.
+- **Hand and life modifiers** — Fremont Regular, *not* the body face. The printed numerals have the title face's tapered, slightly waved minus sign and its high stroke contrast, where MPlantin Bold has a flat rectangular bar and an even stroke. `Fonts::stats` exists to keep this explicit.
+
+`tests/font_search.rs` re-measures all of this; `search_bubble_font` ranks on shape F1.
 
 ## Title font
 

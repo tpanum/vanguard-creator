@@ -44,6 +44,7 @@ impl Refs {
             layout: layout.clone(),
             name_font: self.ctx.name_font.clone(),
             body_font: self.ctx.body_font.clone(),
+            stats_font: self.ctx.stats_font.clone(),
         };
         let rendered = case.element.render_with(&case.yaml(), &ctx);
         let got = to_binary(&rendered, 128, true);
@@ -243,7 +244,7 @@ fn knobs() -> Vec<Knob> {
             elements: BUBBLES,
             get: |l| l.stats_size as f64,
             set: |l, v| l.stats_size = v as f32,
-            span: 6.0,
+            span: 10.0,
             step: 0.5,
         },
     ]
@@ -370,8 +371,8 @@ fn tune_ink_gain() {
     );
     println!("{}", "─".repeat(62));
 
-    for i in 0..=14 {
-        let gain = 1.0 - i as f64 * 0.05;
+    for i in 0..=26 {
+        let gain = 1.65 - i as f64 * 0.05;
         let mut layout = DEFAULT.clone();
         layout.ink_gain = gain as f32;
 
@@ -381,6 +382,7 @@ fn tune_ink_gain() {
                 layout: layout.clone(),
                 name_font: refs.ctx.name_font.clone(),
                 body_font: refs.ctx.body_font.clone(),
+                stats_font: refs.ctx.stats_font.clone(),
             };
             let rendered = c.element.render_with(&c.yaml(), &ctx);
             let got = to_binary(&rendered, 128, true);
