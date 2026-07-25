@@ -1,16 +1,6 @@
-mod bundle;
-mod card;
-mod fonts;
-mod layout;
-mod mse;
-mod print_cmd;
-mod render;
-mod symbols;
-mod sync_cmd;
-mod text;
-
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use vgc::{card, mse, print_cmd, render, sync_cmd};
 
 #[derive(Parser)]
 #[command(

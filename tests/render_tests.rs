@@ -1,13 +1,14 @@
-use ab_glyph::{FontRef, PxScale};
 use image::{ImageBuffer, Luma, RgbaImage};
 use std::path::Path;
 
-use vgc::{card::CardDef, fonts, layout::DEFAULT, render::render_card, text};
+use vgc::{card::CardDef, fonts::Fonts, layout::DEFAULT, render};
 
 // ── Per-element render helpers ────────────────────────────────────────────────
 // Each helper draws exactly one text element onto a blank 718×1024 canvas so
 // that every rendered pixel belongs to the element under test. This gives
 // meaningful precision when compared against per-region reference masks.
+// The helpers call the same per-element `render::draw_*` functions that
+// `render::render_card` itself uses, so they exercise the production path.
 
 fn blank_canvas() -> RgbaImage {
     RgbaImage::from_pixel(718, 1024, image::Rgba([255, 255, 255, 255]))
@@ -31,83 +32,23 @@ fn load_card(yaml_path: &str) -> CardDef {
 
 fn render_title(yaml_path: &str) -> RgbaImage {
     let card = load_card(yaml_path);
-    let name_font = FontRef::try_from_slice(fonts::name_data()).expect("name font");
-    let layout = &DEFAULT;
-
+    let fonts = Fonts::load().expect("fonts");
     let mut canvas = blank_canvas();
-    let base_scale = PxScale {
-        x: layout.name_scale.0,
-        y: layout.name_scale.1,
-    };
-    let stretch_ratio = base_scale.x / base_scale.y;
-    let uniform_scale = PxScale {
-        x: base_scale.y,
-        y: base_scale.y,
-    };
-    let natural_w = text::measure_str(&card.name, &name_font, uniform_scale);
-    let stretched_w = natural_w * stretch_ratio;
-    let name_scale = if stretched_w <= layout.name_max_width {
-        PxScale {
-            x: base_scale.y * stretch_ratio,
-            y: base_scale.y,
-        }
-    } else if natural_w <= layout.name_max_width {
-        PxScale {
-            x: base_scale.y * (layout.name_max_width / natural_w),
-            y: base_scale.y,
-        }
-    } else {
-        let f = layout.name_max_width / natural_w;
-        PxScale {
-            x: base_scale.y * f,
-            y: base_scale.y * f,
-        }
-    };
-    let (nx, ny) = layout.name_center;
-    text::draw_centered_text(
-        &mut canvas,
-        &card.name,
-        nx,
-        ny,
-        &name_font,
-        name_scale,
-        [0, 0, 0],
-    );
+    render::draw_name(&mut canvas, &card.name, &fonts.name, &DEFAULT);
     flatten_alpha(&mut canvas);
     canvas
 }
 
 fn render_rules(yaml_path: &str) -> RgbaImage {
     let card = load_card(yaml_path);
-    let body_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body font");
-    let layout = &DEFAULT;
-
+    let fonts = Fonts::load().expect("fonts");
     let mut canvas = blank_canvas();
-    let (tl, tt, tr, _tb) = layout.text_box;
-    let text_max_w = (tr - tl) as f32 - layout.text_padding as f32 * 2.0;
-    let text_box_h = (layout.text_box.3 - tt) as f32;
-    let fit = text::fit_ability_text(
+    render::draw_rules(
+        &mut canvas,
         &card.ability,
         card.flavor.as_deref(),
-        &body_font,
-        &body_font,
-        text_max_w,
-        text_box_h,
-        layout.ability_size_max,
-        layout.ability_size_min,
-        layout.para_gap,
-        layout.line_height_factor,
-    );
-    text::draw_ability_text(
-        &mut canvas,
-        &fit,
-        layout.text_box,
-        &body_font,
-        &body_font,
-        layout.para_gap,
-        layout.rules_centering_height,
-        layout.ability_stroke,
-        [0, 0, 0],
+        &fonts.body,
+        &DEFAULT,
     );
     flatten_alpha(&mut canvas);
     canvas
@@ -115,20 +56,14 @@ fn render_rules(yaml_path: &str) -> RgbaImage {
 
 fn render_left_bubble(yaml_path: &str) -> RgbaImage {
     let card = load_card(yaml_path);
-    let body_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body font");
-    let layout = &DEFAULT;
-
+    let fonts = Fonts::load().expect("fonts");
     let mut canvas = blank_canvas();
-    let stats_scale = PxScale::from(layout.stats_size);
-    let (hx, hy) = layout.hand_center;
-    text::draw_centered_text(
+    render::draw_stat(
         &mut canvas,
         &card.hand,
-        hx,
-        hy,
-        &body_font,
-        stats_scale,
-        [0, 0, 0],
+        DEFAULT.hand_center,
+        &fonts.body,
+        &DEFAULT,
     );
     flatten_alpha(&mut canvas);
     canvas
@@ -136,20 +71,14 @@ fn render_left_bubble(yaml_path: &str) -> RgbaImage {
 
 fn render_right_bubble(yaml_path: &str) -> RgbaImage {
     let card = load_card(yaml_path);
-    let body_font = FontRef::try_from_slice(fonts::body_bold_data()).expect("body font");
-    let layout = &DEFAULT;
-
+    let fonts = Fonts::load().expect("fonts");
     let mut canvas = blank_canvas();
-    let stats_scale = PxScale::from(layout.stats_size);
-    let (lx, ly) = layout.life_center;
-    text::draw_centered_text(
+    render::draw_stat(
         &mut canvas,
         &card.life,
-        lx,
-        ly,
-        &body_font,
-        stats_scale,
-        [0, 0, 0],
+        DEFAULT.life_center,
+        &fonts.body,
+        &DEFAULT,
     );
     flatten_alpha(&mut canvas);
     canvas
@@ -758,8 +687,7 @@ fn test_volrath_right_bubble() {
 
 #[test]
 fn test_full_card_renders() {
-    let name_font = FontRef::try_from_slice(fonts::name_data()).expect("name font");
-    let body_font = FontRef::try_from_slice(fonts::body_data()).expect("body font");
+    let fonts = Fonts::load().expect("fonts");
     for yaml in &[
         "tests/gerrard.yaml",
         "tests/silverqueen.yaml",
@@ -767,6 +695,6 @@ fn test_full_card_renders() {
         "tests/volrath.yaml",
     ] {
         let card = CardDef::load(Path::new(yaml)).expect("load yaml");
-        render_card(&card, None, None, &name_font, &body_font).expect("render_card");
+        render::render_card(&card, None, None, &fonts).expect("render_card");
     }
 }

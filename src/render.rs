@@ -4,11 +4,14 @@ use image::{imageops, RgbaImage};
 use std::path::{Path, PathBuf};
 
 use crate::{
+    bundle,
     card::{self, CardDef},
-    fonts,
+    fonts::Fonts,
     layout::{Layout, DEFAULT},
     text,
 };
+
+const BLACK: [u8; 3] = [0, 0, 0];
 
 pub fn run(
     paths: &[PathBuf],
@@ -22,12 +25,7 @@ pub fn run(
     }
 
     let template_img = load_template(template)?;
-
-    let name_font =
-        FontRef::try_from_slice(fonts::name_data()).context("loading embedded name font")?;
-    let body_font =
-        FontRef::try_from_slice(fonts::body_bold_data()).context("loading embedded body font")?;
-
+    let fonts = Fonts::load()?;
     let multi = yaml_files.len() > 1;
 
     for yaml_path in &yaml_files {
@@ -49,28 +47,9 @@ pub fn run(
             }
         }
 
-        let artwork = if card.artwork.exists() {
-            match image::open(&card.artwork)
-                .with_context(|| format!("opening artwork {}", card.artwork.display()))
-            {
-                Ok(img) => Some(img.into_rgba8()),
-                Err(e) => {
-                    eprintln!("warning: {e}");
-                    None
-                }
-            }
-        } else {
-            eprintln!("warning: artwork not found: {}", card.artwork.display());
-            None
-        };
+        let artwork = load_artwork(&card);
 
-        match render_card(
-            &card,
-            artwork.as_ref(),
-            Some(&template_img),
-            &name_font,
-            &body_font,
-        ) {
+        match render_card(&card, artwork.as_ref(), Some(&template_img), &fonts) {
             Ok(img) => {
                 img.save(&out_path)
                     .with_context(|| format!("saving {}", out_path.display()))?;
@@ -91,9 +70,26 @@ fn load_template(override_path: Option<&Path>) -> Result<RgbaImage> {
             .with_context(|| format!("opening template {}", p.display()))
             .map(|i| i.into_rgba8());
     }
-    image::load_from_memory(fonts::template_data())
+    image::load_from_memory(bundle::TEMPLATE)
         .context("loading embedded template")
         .map(|i| i.into_rgba8())
+}
+
+/// Load a card's artwork, downgrading any failure to a warning.
+fn load_artwork(card: &CardDef) -> Option<RgbaImage> {
+    if !card.artwork.exists() {
+        eprintln!("warning: artwork not found: {}", card.artwork.display());
+        return None;
+    }
+    match image::open(&card.artwork)
+        .with_context(|| format!("opening artwork {}", card.artwork.display()))
+    {
+        Ok(img) => Some(img.into_rgba8()),
+        Err(e) => {
+            eprintln!("warning: {e}");
+            None
+        }
+    }
 }
 
 fn resolve_output(
@@ -102,7 +98,7 @@ fn resolve_output(
     yaml_path: &Path,
     multi: bool,
 ) -> PathBuf {
-    let safe_name = sanitize_filename(card_name);
+    let safe_name = card::sanitize_filename(card_name);
     match output {
         None => {
             // Default: <card-name>.png next to the YAML file
@@ -118,20 +114,6 @@ fn resolve_output(
     }
 }
 
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('_')
-        .to_lowercase()
-}
-
 /// Render a single card into an RGBA image.
 ///
 /// `artwork` and `template` are optional pre-loaded images. Pass `None` for
@@ -141,134 +123,98 @@ pub fn render_card(
     card: &CardDef,
     artwork: Option<&RgbaImage>,
     template: Option<&RgbaImage>,
-    name_font: &FontRef,
-    body_font: &FontRef,
+    fonts: &Fonts,
 ) -> Result<RgbaImage> {
     let layout = &DEFAULT;
 
     let (w, h) = template.map(|t| t.dimensions()).unwrap_or((718, 1024));
-
-    // ── Create canvas ──────────────────────────────────────────────────────
     let mut canvas = RgbaImage::new(w, h);
 
-    // ── 1. Artwork layer ───────────────────────────────────────────────────
     if let Some(art) = artwork {
         let cropped = scale_to_cover(art.clone(), layout);
-        let (ax, ay) = (layout.art_box.0, layout.art_box.1);
+        let (ax, ay) = (layout.art_box.left, layout.art_box.top);
         imageops::overlay(&mut canvas, &cropped, ax as i64, ay as i64);
     }
 
-    // ── 2. Template overlay ────────────────────────────────────────────────
     if let Some(tmpl) = template {
         imageops::overlay(&mut canvas, tmpl, 0, 0);
     }
 
-    // ── 3. Card name ───────────────────────────────────────────────────────
-    let (nx, ny) = layout.name_center;
-    let base_scale = PxScale {
-        x: layout.name_scale.0,
-        y: layout.name_scale.1,
-    };
-    let stretch_ratio = base_scale.x / base_scale.y; // default horizontal stretch
-                                                     // Measure at uniform y-scale, then apply stretch.
-    let uniform_scale = PxScale {
-        x: base_scale.y,
-        y: base_scale.y,
-    };
-    let natural_w = text::measure_str(&card.name, name_font, uniform_scale);
-    let stretched_w = natural_w * stretch_ratio;
-    let name_scale = if stretched_w <= layout.name_max_width {
-        // Stretch fits: apply the full default stretch ratio.
-        PxScale {
-            x: base_scale.y * stretch_ratio,
-            y: base_scale.y,
-        }
-    } else if natural_w <= layout.name_max_width {
-        // Stretched exceeds max but natural fits: reduce stretch to exactly fill max.
-        PxScale {
-            x: base_scale.y * (layout.name_max_width / natural_w),
-            y: base_scale.y,
-        }
-    } else {
-        // Even natural width exceeds max: scale both axes down proportionally.
-        let f = layout.name_max_width / natural_w;
-        PxScale {
-            x: base_scale.y * f,
-            y: base_scale.y * f,
-        }
-    };
-    text::draw_centered_text(
+    draw_name(&mut canvas, &card.name, &fonts.name, layout);
+    draw_rules(
         &mut canvas,
-        &card.name,
-        nx,
-        ny,
-        name_font,
-        name_scale,
-        [0, 0, 0],
-    );
-
-    // ── 4. Ability text ────────────────────────────────────────────────────
-    let (tl, tt, tr, _tb) = layout.text_box;
-    let text_max_w = (tr - tl) as f32 - layout.text_padding as f32 * 2.0;
-    let text_box_h = (layout.text_box.3 - tt) as f32;
-
-    let fit = text::fit_ability_text(
         &card.ability,
         card.flavor.as_deref(),
-        body_font,
-        body_font,
-        text_max_w,
-        text_box_h,
-        layout.ability_size_max,
-        layout.ability_size_min,
-        layout.para_gap,
-        layout.line_height_factor,
+        &fonts.body,
+        layout,
     );
-
-    text::draw_ability_text(
-        &mut canvas,
-        &fit,
-        layout.text_box,
-        body_font,
-        body_font,
-        layout.para_gap,
-        layout.rules_centering_height,
-        layout.ability_stroke,
-        [0, 0, 0],
-    );
-
-    // ── 5. Stat modifiers ──────────────────────────────────────────────────
-    let stats_scale = PxScale::from(layout.stats_size);
-    let (hx, hy) = layout.hand_center;
-    text::draw_centered_text(
+    draw_stat(
         &mut canvas,
         &card.hand,
-        hx,
-        hy,
-        body_font,
-        stats_scale,
-        [0, 0, 0],
+        layout.hand_center,
+        &fonts.body,
+        layout,
     );
-
-    let (lx, ly) = layout.life_center;
-    text::draw_centered_text(
+    draw_stat(
         &mut canvas,
         &card.life,
-        lx,
-        ly,
-        body_font,
-        stats_scale,
-        [0, 0, 0],
+        layout.life_center,
+        &fonts.body,
+        layout,
     );
 
     Ok(canvas)
 }
 
+// ── Per-element rendering ─────────────────────────────────────────────────────
+// Each card element is drawn by exactly one function, used both by
+// `render_card` and by the F1 tests (which render one element per canvas).
+// Keeping these as the single entry points guarantees the tests exercise the
+// same code path, with the same parameters, as production rendering.
+
+/// Draw the card name centered in the name banner.
+pub fn draw_name(canvas: &mut RgbaImage, name: &str, font: &FontRef, layout: &Layout) {
+    let scale = text::fit_name_scale(name, font, layout);
+    let (nx, ny) = layout.name_center;
+    text::draw_centered_text(canvas, name, nx, ny, font, scale, BLACK);
+}
+
+/// Fit and draw the ability (and optional flavor) text block.
+pub fn draw_rules(
+    canvas: &mut RgbaImage,
+    ability: &str,
+    flavor: Option<&str>,
+    font: &FontRef,
+    layout: &Layout,
+) {
+    let fit = text::fit_rules_text(ability, flavor, font, font, layout);
+    text::draw_rules_text(canvas, &fit, font, font, layout, BLACK);
+}
+
+/// Draw a stat modifier (hand or life) centered in its bubble.
+pub fn draw_stat(
+    canvas: &mut RgbaImage,
+    value: &str,
+    center: (u32, u32),
+    font: &FontRef,
+    layout: &Layout,
+) {
+    let (cx, cy) = center;
+    text::draw_centered_text(
+        canvas,
+        value,
+        cx,
+        cy,
+        font,
+        PxScale::from(layout.stats_size),
+        BLACK,
+    );
+}
+
 /// Scale artwork to cover the art box (fill both dimensions, then center-crop).
 fn scale_to_cover(art: RgbaImage, layout: &Layout) -> RgbaImage {
-    let (box_l, box_t, box_r, box_b) = layout.art_box;
-    let box_w = (box_r - box_l) as f32;
-    let box_h = (box_b - box_t) as f32;
+    let box_w = layout.art_box.width();
+    let box_h = layout.art_box.height();
 
     let art_w = art.width() as f32;
     let art_h = art.height() as f32;

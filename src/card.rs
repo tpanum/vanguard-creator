@@ -25,15 +25,36 @@ impl CardDef {
             .with_context(|| format!("reading {}", yaml_path.display()))?;
         let mut card: Self = serde_yaml::from_str(&text)
             .with_context(|| format!("parsing YAML in {}", yaml_path.display()))?;
-
-        // Resolve artwork path relative to YAML file
-        if card.artwork.is_relative() {
-            if let Some(parent) = yaml_path.parent() {
-                card.artwork = parent.join(&card.artwork);
-            }
-        }
+        card.artwork = resolve_artwork(yaml_path, &card.artwork);
         Ok(card)
     }
+}
+
+/// Resolve an artwork path relative to the YAML file that references it.
+/// Absolute paths are returned unchanged.
+pub fn resolve_artwork(yaml_path: &Path, artwork: &Path) -> PathBuf {
+    if artwork.is_relative() {
+        if let Some(parent) = yaml_path.parent() {
+            return parent.join(artwork);
+        }
+    }
+    artwork.to_owned()
+}
+
+/// Turn a card name into a safe lowercase file stem (e.g. "Sliver Queen,
+/// Brood Mother" → "sliver_queen__brood_mother").
+pub fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_lowercase()
 }
 
 #[derive(Debug)]
@@ -50,67 +71,51 @@ impl std::fmt::Display for ValidationIssue {
 
 pub fn validate_file(yaml_path: &Path) -> Vec<ValidationIssue> {
     let mut issues = Vec::new();
-
-    let text = match std::fs::read_to_string(yaml_path) {
-        Ok(t) => t,
-        Err(e) => {
-            issues.push(ValidationIssue {
-                path: yaml_path.to_owned(),
-                message: format!("cannot read file: {e}"),
-            });
-            return issues;
-        }
+    let mut issue = |message: String| {
+        issues.push(ValidationIssue {
+            path: yaml_path.to_owned(),
+            message,
+        });
     };
 
-    let data: serde_yaml::Value = match serde_yaml::from_str(&text) {
+    let data = match load_yaml_value(yaml_path) {
         Ok(v) => v,
         Err(e) => {
-            issues.push(ValidationIssue {
-                path: yaml_path.to_owned(),
-                message: format!("YAML parse error: {e}"),
-            });
+            issue(format!("{e:#}"));
             return issues;
         }
     };
 
     for field in &["name", "ability", "hand", "life", "artwork"] {
         if data.get(field).is_none() {
-            issues.push(ValidationIssue {
-                path: yaml_path.to_owned(),
-                message: format!("missing required field '{field}'"),
-            });
+            issue(format!("missing required field '{field}'"));
         }
     }
 
     for stat in &["hand", "life"] {
         if let Some(val) = data.get(stat).and_then(|v| v.as_str()) {
             if !stat_re().is_match(val) {
-                issues.push(ValidationIssue {
-                    path: yaml_path.to_owned(),
-                    message: format!("invalid '{stat}' value: {val:?} (expected +N or -N)"),
-                });
+                issue(format!(
+                    "invalid '{stat}' value: {val:?} (expected +N or -N)"
+                ));
             }
         }
     }
 
     if let Some(artwork_str) = data.get("artwork").and_then(|v| v.as_str()) {
-        let artwork = Path::new(artwork_str);
-        let resolved = if artwork.is_absolute() {
-            artwork.to_owned()
-        } else if let Some(parent) = yaml_path.parent() {
-            parent.join(artwork)
-        } else {
-            artwork.to_owned()
-        };
+        let resolved = resolve_artwork(yaml_path, Path::new(artwork_str));
         if !resolved.exists() {
-            issues.push(ValidationIssue {
-                path: yaml_path.to_owned(),
-                message: format!("artwork file not found: {}", resolved.display()),
-            });
+            issue(format!("artwork file not found: {}", resolved.display()));
         }
     }
 
     issues
+}
+
+/// Parse a YAML file into an untyped value (for loose, field-by-field checks).
+fn load_yaml_value(yaml_path: &Path) -> Result<serde_yaml::Value> {
+    let text = std::fs::read_to_string(yaml_path).context("cannot read file")?;
+    serde_yaml::from_str(&text).context("YAML parse error")
 }
 
 /// Collect all .yaml files from a list of paths (files and directories).
@@ -152,37 +157,17 @@ fn collect_yaml_from_dir(dir: &Path, recursive: bool, files: &mut Vec<PathBuf>) 
 pub fn list_missing_artwork_cmd(paths: &[PathBuf], recursive: bool) -> Result<()> {
     let files = collect_yaml_files(paths, recursive)?;
     for yaml_path in &files {
-        let text = match std::fs::read_to_string(yaml_path) {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("warning: skipping {}: {e}", yaml_path.display());
-                continue;
-            }
-        };
-        let data: serde_yaml::Value = match serde_yaml::from_str(&text) {
+        let data = match load_yaml_value(yaml_path) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!(
-                    "warning: skipping {}: YAML parse error: {e}",
-                    yaml_path.display()
-                );
+                eprintln!("warning: skipping {}: {e:#}", yaml_path.display());
                 continue;
             }
         };
 
         let missing = match data.get("artwork").and_then(|v| v.as_str()) {
             None => true,
-            Some(artwork_str) => {
-                let artwork = Path::new(artwork_str);
-                let resolved = if artwork.is_absolute() {
-                    artwork.to_owned()
-                } else if let Some(parent) = yaml_path.parent() {
-                    parent.join(artwork)
-                } else {
-                    artwork.to_owned()
-                };
-                !resolved.exists()
-            }
+            Some(artwork_str) => !resolve_artwork(yaml_path, Path::new(artwork_str)).exists(),
         };
 
         if missing {
@@ -205,4 +190,19 @@ pub fn validate_cmd(paths: &[PathBuf], recursive: bool) -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_filename() {
+        assert_eq!(sanitize_filename("Gerrard"), "gerrard");
+        assert_eq!(
+            sanitize_filename("Sliver Queen, Brood Mother"),
+            "sliver_queen__brood_mother"
+        );
+        assert_eq!(sanitize_filename("Urza's Saga"), "urza_s_saga");
+    }
 }
