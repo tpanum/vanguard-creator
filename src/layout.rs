@@ -94,6 +94,11 @@ pub struct Layout {
     /// Vertical nudge of inline mana symbols, in pixels, positive = down.
     /// Symbols are otherwise centered on the line box.
     pub symbol_y_offset: f32,
+    /// Center of the coloured gem set into the bottom bezel.
+    pub gem_center: (f32, f32),
+    /// Radius of the gem sphere, in pixels. Recolouring fades out over the
+    /// next two pixels, so this is the last fully-affected radius.
+    pub gem_radius: f32,
 }
 
 impl Layout {
@@ -142,4 +147,6 @@ pub const DEFAULT: Layout = Layout {
     ink_gain: 0.87,
     symbol_scale: 0.95,
     symbol_y_offset: 1.0,
+    gem_center: (361.5, 955.5),
+    gem_radius: 16.5,
 };

@@ -7,6 +7,7 @@ use crate::{
     bundle,
     card::{self, CardDef},
     fonts::Fonts,
+    gem,
     layout::{Layout, DEFAULT},
     meta, text,
 };
@@ -137,6 +138,9 @@ pub fn render_card(
 
     if let Some(tmpl) = template {
         imageops::overlay(&mut canvas, tmpl, 0, 0);
+        // The gem is part of the frame, so it only exists once the template is
+        // down. Nothing drawn below reaches it.
+        gem::recolor(&mut canvas, card.color, layout);
     }
 
     draw_name(&mut canvas, &card.name, &fonts.name, layout);

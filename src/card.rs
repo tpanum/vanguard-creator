@@ -2,7 +2,10 @@ use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::OnceLock;
+
+use crate::gem::GemColor;
 
 static STAT_RE: OnceLock<Regex> = OnceLock::new();
 fn stat_re() -> &'static Regex {
@@ -17,6 +20,10 @@ pub struct CardDef {
     pub hand: String,
     pub life: String,
     pub artwork: PathBuf,
+    /// Colour of the gem in the bottom bezel. Omitted means blue, which is
+    /// what the bundled template already carries.
+    #[serde(default)]
+    pub color: GemColor,
 }
 
 impl CardDef {
@@ -99,6 +106,17 @@ pub fn validate_file(yaml_path: &Path) -> Vec<ValidationIssue> {
                     "invalid '{stat}' value: {val:?} (expected +N or -N)"
                 ));
             }
+        }
+    }
+
+    if let Some(color) = data.get("color") {
+        match color.as_str() {
+            Some(s) => {
+                if let Err(e) = GemColor::from_str(s) {
+                    issue(e);
+                }
+            }
+            None => issue("invalid 'color' value: expected a string".to_owned()),
         }
     }
 

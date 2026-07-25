@@ -10,6 +10,7 @@ ability: "During your draw phase,\ndraw an additional card."
 flavor: "Soldier. Adventurer. Heir to the Legacy. Gerrard has, over the years, traveled much of Dominaria in search of fortune and glory. Now, after serving nobly in the Benalish army, he has returned to the Weatherlight to serve as captain in Sisay's absence and to take up the battle against the Lord of the Wastes."
 hand: "-4"
 life: "+0"
+color: "blue"
 artwork: "assets/artwork/gerrard.png"
 ```
 
@@ -125,7 +126,7 @@ Check card definitions for errors without rendering.
 vgc validate <path>...
 ```
 
-Reports missing fields, unresolvable artwork paths, and unknown mana symbols.
+Reports missing fields, unresolvable artwork paths, unknown gem colours, and unknown mana symbols.
 
 ## Card Definition Format
 
@@ -138,6 +139,7 @@ ability: |-
   {R}: Target Goblin gains haste until end of turn.
 hand: "-1"
 life: "+3"
+color: "red"
 artwork: "artwork/goblin-king.png"
 ```
 
@@ -148,7 +150,30 @@ artwork: "artwork/goblin-king.png"
 | `hand` | yes | Starting hand size modifier (e.g. `+1`, `-2`, `+0`). |
 | `life` | yes | Starting life modifier. |
 | `artwork` | yes | Path to artwork image, resolved relative to the YAML file. |
+| `color` | no | Colour of the gem in the bottom bezel — see [Gem Colour](#gem-colour). Default: `blue`. |
 | `flavor` | no | Flavor text rendered below the ability text. **Currently poorly implemented — avoid using it until rendering is improved.** |
+
+### Gem Colour
+
+Every Vanguard card carries a small glossy sphere set into the bottom of the frame, and the originals do not all use the same colour. Set it with `color`, which accepts either the colour name or its Magic letter:
+
+| `color` | Aliases |
+|---|---|
+| `white` | `w` |
+| `blue` | `u` |
+| `black` | `b` |
+| `red` | `r` |
+| `green` | `g` |
+
+![Gem colours](assets/examples/gem_colors.png)
+
+<p align="center"><em>White, blue, black, red, green.</em></p>
+
+Blue is the default, because that is what the bundled template already carries. The other transforms are fitted against the original scans in `tests/assets/`: sampling the gem out of all 25 puts them into four tight clusters — blue, green, red and white — and `cargo run --release --example fit_gem` searches for the hue, saturation and value constants that reproduce each cluster's mean, printing them alongside a magnified render-vs-original comparison. Black is the one colour with no original to fit against, so its constants are chosen to sit plausibly alongside the measured four.
+
+The recolour is a hue rotation applied per pixel inside the gem disc, so the sphere keeps its own shading, its specular highlight, and the warm light bouncing up into it off the bezel — which stays warm whatever colour the gem is.
+
+Note that the gem colour does **not** follow the card's Magic colour identity on the originals: Serra's gem is green and Volrath's is white. Treat it as its own property of the card.
 
 ### Mana Symbols
 
@@ -235,6 +260,8 @@ Side-by-side comparisons of `vgc`-rendered cards (left) versus original Wizards 
 | Rendered | Original |
 |:---:|:---:|
 | ![Volrath rendered](assets/examples/volrath.png) | ![Volrath original](assets/examples/volrath_org.png) |
+
+Between them these four cover three of the five gem colours — Gerrard is blue, Sliver Queen and Sidar Kondo are red, Volrath is white. The strip under [Gem Colour](#gem-colour) shows all five.
 
 ## Examples
 
