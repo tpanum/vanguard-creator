@@ -1,0 +1,5 @@
+name: "Takara"
+ability: "Sacrifice a creature: Takara deals 1 damage\nto target creature or player."
+hand: "+3"
+life: "-8"
+artwork: "../assets/artwork/takara.png"

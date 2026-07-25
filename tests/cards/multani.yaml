@@ -1,0 +1,5 @@
+name: "Multani"
+ability: "All creatures you control get +X/+0, where\nX is the number of cards in your hand."
+hand: "-3"
+life: "-2"
+artwork: "../assets/artwork/multani.png"

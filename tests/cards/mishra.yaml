@@ -1,0 +1,5 @@
+name: "Mishra"
+ability: "Double all damage dealt by\ncreatures you control."
+hand: "+0"
+life: "-3"
+artwork: "../assets/artwork/mishra.png"

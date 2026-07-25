@@ -151,14 +151,14 @@ pub fn render_card(
         &mut canvas,
         &card.hand,
         layout.hand_center,
-        &fonts.body,
+        &fonts.stats,
         layout,
     );
     draw_stat(
         &mut canvas,
         &card.life,
         layout.life_center,
-        &fonts.body,
+        &fonts.stats,
         layout,
     );
 
@@ -175,7 +175,8 @@ pub fn render_card(
 pub fn draw_name(canvas: &mut RgbaImage, name: &str, font: &FontRef, layout: &Layout) {
     let scale = text::fit_name_scale(name, font, layout);
     let (nx, ny) = layout.name_center;
-    text::draw_centered_text(canvas, name, nx, ny, font, scale, BLACK);
+    let pen = text::Pen::new(BLACK, layout.ink_gain);
+    text::draw_text_centered_on_baseline(canvas, name, nx, ny, font, scale, pen);
 }
 
 /// Fit and draw the ability (and optional flavor) text block.
@@ -187,7 +188,8 @@ pub fn draw_rules(
     layout: &Layout,
 ) {
     let fit = text::fit_rules_text(ability, flavor, font, font, layout);
-    text::draw_rules_text(canvas, &fit, font, font, layout, BLACK);
+    let pen = text::Pen::new(BLACK, layout.ink_gain);
+    text::draw_rules_text(canvas, &fit, font, font, layout, pen);
 }
 
 /// Draw a stat modifier (hand or life) centered in its bubble.
@@ -199,14 +201,14 @@ pub fn draw_stat(
     layout: &Layout,
 ) {
     let (cx, cy) = center;
-    text::draw_centered_text(
+    text::draw_text_centered_on_ink(
         canvas,
         value,
         cx,
         cy,
         font,
         PxScale::from(layout.stats_size),
-        BLACK,
+        text::Pen::new(BLACK, layout.ink_gain),
     );
 }
 

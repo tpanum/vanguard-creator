@@ -1,0 +1,5 @@
+name: "Titania"
+ability: "You may play an additional land\neach of your turns."
+hand: "+2"
+life: "-5"
+artwork: "../assets/artwork/titania.png"

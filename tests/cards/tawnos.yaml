@@ -1,0 +1,5 @@
+name: "Tawnos"
+ability: "You may play artifact,\ncreature, and enchantment spells\nany time you could play an instant."
+hand: "+3"
+life: "-4"
+artwork: "../assets/artwork/tawnos.png"

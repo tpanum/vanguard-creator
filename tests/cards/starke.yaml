@@ -1,0 +1,5 @@
+name: "Starke"
+ability: "During your draw phase, you may draw an\nadditional card and then put any card in\nyour hand on the bottom of your library."
+hand: "+0"
+life: "-2"
+artwork: "../assets/artwork/starke.png"

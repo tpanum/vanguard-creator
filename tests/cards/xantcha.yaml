@@ -1,0 +1,5 @@
+name: "Xantcha"
+ability: "Sacrifice a permanent: Regenerate\ntarget creature."
+hand: "+1"
+life: "+3"
+artwork: "../assets/artwork/xantcha.png"

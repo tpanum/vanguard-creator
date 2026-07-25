@@ -1,0 +1,5 @@
+name: "Oracle"
+ability: "You may untap any attacking creatures\nyou control and remove them from combat."
+hand: "+1"
+life: "+9"
+artwork: "../assets/artwork/oracle.png"

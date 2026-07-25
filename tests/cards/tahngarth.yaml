@@ -1,0 +1,5 @@
+name: "Tahngarth"
+ability: "Your creatures are unaffected\nby summoning sickness."
+hand: "-1"
+life: "+7"
+artwork: "../assets/artwork/tahngarth.png"

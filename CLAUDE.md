@@ -23,11 +23,42 @@ The EXIF block is hand-built (a minimal little-endian TIFF header with one IFD0 
 
 Whenever designing or modifying text insertion (placement, sizing, font, layout), you MUST use the text-pixel F1 score as the feedback metric. Raw pixel diff is useless here because the template background dominates the signal.
 
-The method (implemented in `tests/render_tests.rs`):
-1. For each text region (title, rules, left bubble, right bubble), render **only that element** onto a blank 718×1024 canvas using the exact same `text::*` functions called by `render::render_card`.
-2. Scale the reference mask to 718×1024.
-3. Binarize both at luma < 128 (dark pixels = text).
+The suite covers all 25 cards in `tests/assets/`, four elements each. The method (driven by `tests/common/mod.rs`, one test per card):
+1. For each text region (title, rules, left bubble, right bubble), render **only that element** onto a blank 718×1024 canvas using the exact same `render::draw_*` functions called by `render::render_card`.
+2. Segment the same region out of the card scan, in the same 718×1024 space.
+3. Binarize the render at luma < 128 (dark pixels = text).
 4. Compute precision, recall, and F1 over the binary text-pixel masks.
+
+### Two scores, not one
+
+Every case is gated on a pair:
+
+- **overall F1** — placement and rendering together. The original single score.
+- **shape F1** — the same comparison after the best translation and uniform scale have been applied, so placement is factored out and what remains is the rendering itself: typeface, weight, line breaking.
+
+They fail for different reasons, and that is the point. Moving a text box changes overall and leaves shape alone; changing a font moves shape. A drop in overall with shape steady is a layout regression; the reverse is a rendering regression. One number confounds the two, which is how a font error can hide behind a compensating offset — the calibrator will happily buy one with the other if you let it.
+
+Shape F1 is also the right metric for choosing a typeface. At these sizes raw overlap is dominated by how much ink lands where, which barely separates two faces of similar weight: picking the stat-bubble face on overall F1 chose MPlantin Bold, and on shape F1 chose Fremont, which is the one that matches the printed card.
+
+### Reference masks
+
+No mask is stored on disk. `tests/common/refmask.rs` segments all four regions out of the card scan at test time — local-background threshold at native resolution, frame and speckle components dropped, area-correct downsample to 718×1024 — and memoises the result. A mask is therefore a pure function of two version-controlled inputs: the scan and that file.
+
+Do not go back to hand-traced masks. The ones this replaced carried ~20% more ink than the scans they came from and contained no mana symbols at all, which biased every measurement toward type that was too heavy and scored a correctly drawn `{3}` as a block of false positives.
+
+Adding a card costs a scan at `tests/assets/<slug>.jpg`, a definition at `tests/cards/<slug>.yaml`, and a row in `CARDS` — no fixtures. After changing anything in `refmask.rs`, run `cargo test --release --test build_masks -- --ignored --nocapture` and look at the overlays before trusting any score built on the result.
+
+### Reading a failure
+
+Every case prints a diagnosis, not just a number: ink volume vs the reference, both bounding boxes, the translation and uniform scale that would maximise F1, the F1 those would reach, and a per-line table. The gap between `F1` and `aligned` is placement error you can fix from `layout.rs`; what remains below 100% is glyph shape, weight, and line breaking. `cargo test -- --ignored accuracy_report --nocapture` prints the whole suite as one table.
+
+### Calibrating
+
+`tests/calibrate.rs` coordinate-descends the `Layout` constants against mean F1 and prints suggested values; `KNOB=<name> … explain_knob` breaks a single knob down per card, which is how you tell a real layout error from one card's scan being off-register. **Always run `explain_knob` before accepting a suggestion.** The descent optimises a mean, so one card can carry it: `symbol_scale` was pushed to 1.40 by Hanna alone, buying a translation through the wrong knob, while the other three symbol cards all peaked near 0.95. `tests/font_search.rs` scores candidate typefaces, re-fitting the size knob per face so a face is not rejected merely for having different metrics.
+
+### Where F1 must not be trusted
+
+F1 compares *binarized* images, so it is blind to antialiasing and will always reward driving `layout.ink_gain` toward zero — which solidifies every partially covered edge pixel and makes the real card look jagged. `ink_gain` is therefore excluded from the calibrator and set by `tune_ink_gain`, which picks the value where the render lays down the same ink volume as the original (ratio ≈ 1.00). Any future knob that can trade antialiasing for coverage needs the same treatment.
 
 **The test helpers MUST always call the same `text::*` functions, with the same arguments, as `render::render_card` does.** If the production render path changes, the corresponding test helper must be updated in the same commit. Tests that call different functions or use different parameters do not validate the actual output.
 
@@ -35,9 +66,37 @@ The method (implemented in `tests/render_tests.rs`):
 
 Run with `UPDATE_FIXTURES=1 cargo test -- --nocapture` to save rendered images and diff maps to `tests/fixtures/` for visual inspection.
 
+## Text anchoring
+
+Two anchors, and they are not interchangeable:
+
+- **Stat bubbles** use `text::draw_text_centered_on_ink`. The target is a circle stamped on the template, so what must sit in its middle is the visible `-4`, not the typographic slot around it. Centering on the font's ascent-plus-descent reserves descender space that digits never use and pushes them ~3 px low.
+- **Card names** use `text::draw_text_centered_on_baseline`. A banner needs every name on the same baseline, so the vertical position must depend only on the font and its size — never on whether the name happens to contain a descender. Ink-centering a title makes `Volrath` ride higher than `Sliver Queen, Brood Mother`.
+
+## Original line breaks
+
+The 1997 cards were broken by hand, not by a width rule — Sidar Kondo breaks after `+3/+3` with room to spare on the line. Where a card's true breaks are known, encode them as `\n` in its YAML; the auto-wrap is a fallback for new cards, and scoring against it measures the wrap heuristic rather than the rendering. All four reference cards carry their originals' breaks.
+
 **The F1 score is the ground truth for rendering quality. If a change causes F1 to drop, the change made things worse — revert or iterate until F1 recovers or improves. If F1 improves, the change is an improvement. Do not override this metric with subjective impressions.**
 
 **When a test score seems unusually low (e.g. below 10%), always generate and inspect the diff image before drawing conclusions.** The diff (black = correct, red = missed, green = extra) immediately reveals whether the problem is a positional offset, wrong font, wrong line-breaking, or a bad mask. Do not attempt to diagnose low scores from band statistics alone — look at the diff first.
+
+## README sample images
+
+`README.md` shows four rendered cards beside scans of the originals, from `assets/examples/`. The `*_org.*` files are the originals and never change; the four rendered ones are build output and go stale the moment anything about rendering changes.
+
+**Regenerate them in the same commit as any change to rendering** — `src/text.rs`, `src/render.rs`, `src/layout.rs`, the bundled fonts or symbols, or a card definition the samples use. A reader compares those images against the originals to judge the tool; a stale sample misrepresents it.
+
+```sh
+cargo run --release -- create tests/cards/gerrard.yaml tests/cards/silverqueen.yaml \
+    tests/cards/sidarkondo.yaml tests/cards/volrath.yaml -o assets/examples
+mv -f assets/examples/sliver_queen__brood_mother.png assets/examples/silverqueen.png
+mv -f assets/examples/sidar_kondo.png assets/examples/sidar.png
+```
+
+The renames are needed because output filenames come from the card name, while the README links to the shorter slugs. The samples are rendered from `tests/cards/*.yaml` on purpose, so they always show the same card data the accuracy suite scores — those four carry `flavor` text, which the suite drops but the samples need.
+
+Look at the result before committing. The F1 metric never sees the samples: it scores ability text only, on a blank canvas, so nothing in the suite will catch flavor text colliding with the stat bubbles, artwork cropping wrongly, or a symbol rendering at the wrong tone.
 
 ## Scryfall API
 
@@ -53,6 +112,14 @@ The API reliably provides:
 - `flavor_text` — lore text on the card
 
 **Do NOT use `oracle_text` for the rules text.** Scryfall only stores modernized oracle text (e.g. "from the battlefield" instead of the original "from play"), which differs from what is printed on the physical cards and shown in the reference masks. Rules text must be sourced from card scans or other references to the original printed wording.
+
+## Which face goes where
+
+- **Card name** — Fremont Regular.
+- **Rules and flavor text** — MPlantin Bold. Confirmed against the scans; every alternative tried scored well below it.
+- **Hand and life modifiers** — Fremont Regular, *not* the body face. The printed numerals have the title face's tapered, slightly waved minus sign and its high stroke contrast, where MPlantin Bold has a flat rectangular bar and an even stroke. `Fonts::stats` exists to keep this explicit.
+
+`tests/font_search.rs` re-measures all of this; `search_bubble_font` ranks on shape F1.
 
 ## Title font
 

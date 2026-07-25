@@ -1,0 +1,5 @@
+name: "Ertai"
+ability: "Your creatures can’t be the target of\nyour opponents’ spells or abilities."
+hand: "-1"
+life: "+4"
+artwork: "../assets/artwork/ertai.png"

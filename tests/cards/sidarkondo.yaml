@@ -1,0 +1,6 @@
+name: "Sidar Kondo"
+ability: "{3}: Target creature gets +3/+3\nuntil end of turn."
+flavor: "Kondo served as guardian to the infant Gerrard and raised him alongside his own son, Vuel. He taught both boys to be strong and to lead, but whereas Gerrard became a champion of honor, Vuel’s bitterness led him to become an equally devastating force of malice."
+hand: "-1"
+life: "+12"
+artwork: "../assets/artwork/sidar.png"

@@ -1,0 +1,5 @@
+name: "Sisay"
+ability: "Whenever you tap a land for\nmana, it produces one additional\nmana of the same type."
+hand: "-2"
+life: "-3"
+artwork: "../assets/artwork/sisay.png"

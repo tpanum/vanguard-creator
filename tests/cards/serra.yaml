@@ -1,0 +1,5 @@
+name: "Serra"
+ability: "All creatures you control get +0/+2."
+hand: "+1"
+life: "+1"
+artwork: "../assets/artwork/serra.png"
