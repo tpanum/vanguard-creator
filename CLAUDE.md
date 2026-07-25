@@ -7,6 +7,18 @@ We strive to embed everything required to produce great-looking Vanguard cards d
 
 Where customisation makes sense (e.g. swapping the card template for a fan-made variant), we expose optional CLI flags that override the embedded default — but the embedded version is always the fallback. No external files should ever be *required* for a standard render.
 
+## Output provenance metadata
+
+Every image `vgc` writes carries the version of the tool that produced it (`vgc <CARGO_PKG_VERSION>`), so a card file found later can be traced back to the exact release that rendered it. This lives in `src/meta.rs`:
+
+- **PNG** — EXIF `Software` (0x0131) in an `eXIf` chunk, plus a `Software` `tEXt` chunk so tools without EXIF support still show it
+- **JPEG** — EXIF `Software` in an `APP1` segment
+- **Print PDF** — `/Producer` and `/Creator` in the document info dictionary (`print_cmd::save_as_pdf`)
+
+**All raster output must be saved through `meta::save_with_version`, never `img.save()` directly.** A new code path that writes a card image and bypasses this helper silently produces untraceable files. Formats with no metadata container we rely on degrade to a plain save rather than erroring.
+
+The EXIF block is hand-built (a minimal little-endian TIFF header with one IFD0 entry) and spliced into the encoded bytes — after `IHDR` for PNG, after `SOI` for JPEG. Keep the unit tests in `src/meta.rs` passing if you touch that byte layout; one of them round-trips through `image`'s own `PngDecoder::exif_metadata`, which is what catches a malformed block.
+
 ## Testing text rendering
 
 Whenever designing or modifying text insertion (placement, sizing, font, layout), you MUST use the text-pixel F1 score as the feedback metric. Raw pixel diff is useless here because the template background dominates the signal.

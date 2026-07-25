@@ -41,6 +41,8 @@ vgc create <path>... [flags]
 | `-o, --output <path>` | Output file or directory. Defaults to `<card-name>.png` per card. |
 | `--template <file>` | Card template image. Will use embedded image by default. |
 
+Every rendered image records the `vgc` version that produced it — see [Output Metadata](#output-metadata).
+
 ### `vgc parse-mse`
 
 Extract cards and artwork from a Magic Set Editor (`.mse-set`) file into individual YAML card definitions.
@@ -192,6 +194,23 @@ ability: |-
 ## Assets
 
 All required assets — card template, fonts (Fremont Regular, MPlantin), and mana symbol PNGs — are bundled into the binary. No installation step or external asset directory is needed. Pass `--template <file>` to `vgc render` to override the embedded template with a custom one.
+
+## Output Metadata
+
+Every image `vgc` writes records the version of the tool that produced it, so a card file found later can be traced back to the exact release that rendered it. The value is `vgc <version>`, e.g. `vgc 0.8.0`.
+
+| Output | Where it is stored |
+|---|---|
+| PNG | EXIF `Software` (0x0131) in an `eXIf` chunk, plus a `Software` `tEXt` chunk for tools without EXIF support |
+| JPEG | EXIF `Software` in an `APP1` segment |
+| Print PDF | `/Producer` and `/Creator` in the document info dictionary |
+
+```
+$ exiftool -Software Gerrard.png
+Software                        : vgc 0.8.0
+```
+
+Both `vgc create` and `vgc print` write raster output this way. Any other format has no metadata container we rely on, so it is written without the tag rather than failing.
 
 ## Gallery
 

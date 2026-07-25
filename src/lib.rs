@@ -2,6 +2,7 @@ pub mod bundle;
 pub mod card;
 pub mod fonts;
 pub mod layout;
+pub mod meta;
 pub mod mse;
 pub mod print_cmd;
 pub mod render;
