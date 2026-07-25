@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::OnceLock;
 
-use crate::gem::GemColor;
+use crate::gem::Gem;
 
 static STAT_RE: OnceLock<Regex> = OnceLock::new();
 fn stat_re() -> &'static Regex {
@@ -52,7 +52,7 @@ pub struct CardDef {
     /// Colour of the gem in the bottom bezel. Required: it is a property of
     /// the card that nothing else can be derived from, and defaulting it
     /// silently renders the wrong gem rather than saying so.
-    pub color: GemColor,
+    pub color: Gem,
 }
 
 impl CardDef {
@@ -151,7 +151,7 @@ pub fn validate_file(yaml_path: &Path) -> Vec<ValidationIssue> {
     if let Some(color) = data.get("color") {
         match color.as_str() {
             Some(s) => {
-                if let Err(e) = GemColor::from_str(s) {
+                if let Err(e) = Gem::from_str(s) {
                     issue(e);
                 }
             }

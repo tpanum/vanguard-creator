@@ -14,7 +14,7 @@
 
 use image::{imageops, RgbaImage};
 use vgc::{
-    gem::{self, GemColor, Transform},
+    gem::{self, Gem, GemColor, Transform},
     layout::DEFAULT,
 };
 
@@ -243,7 +243,7 @@ fn write_sheet(template: &RgbaImage) {
     let mut sheet = RgbaImage::from_pixel(side * 5, side * 2, image::Rgba([24, 24, 24, 255]));
     for (i, color) in GemColor::ALL.iter().enumerate() {
         let mut img = template.clone();
-        gem::recolor(&mut img, *color, &DEFAULT);
+        gem::recolor(&mut img, Gem::Single(*color), &DEFAULT);
         imageops::overlay(&mut sheet, &zoom(&img, 1.0, 1.0), i as i64 * side as i64, 0);
 
         if originals[i].is_empty() {

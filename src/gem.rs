@@ -21,6 +21,12 @@
 //! that are saturated, blue-family and inside the gem disc are touched. That
 //! leaves the warm light bouncing up off the bezel into the bottom of the
 //! sphere — which is the same warm colour whatever the gem is — alone.
+//!
+//! A card may also name two colours, which are graded into each other from
+//! left to right across the sphere. No original is like this either; it is an
+//! extension for custom cards, in the spirit of hybrid mana. See
+//! [`recolor_blended`] for why the two *results* are interpolated and not the
+//! two transforms.
 
 use image::RgbaImage;
 use serde::Deserialize;
@@ -29,13 +35,11 @@ use std::str::FromStr;
 
 use crate::layout::Layout;
 
-/// The five Magic colours a Vanguard gem can take.
+/// One of the five Magic colours. A card's `color:` field parses to [`Gem`],
+/// which is one of these or a pair of them.
 ///
-/// Deserialization goes through [`FromStr`], so YAML accepts exactly what the
-/// `validate` command accepts — including the Magic letters and any casing.
-/// Deliberately not [`Default`]. Every card states its gem colour, so there is
-/// no colour to fall back to — a card that omits it is an error, not a blue
-/// card.
+/// Deliberately not [`Default`]: every card states its gem colour, so there is
+/// none to fall back to — a card that omits it is an error, not a blue card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "String")]
 pub enum GemColor {
@@ -45,6 +49,82 @@ pub enum GemColor {
     Black,
     Red,
     Green,
+}
+
+/// What a card's `color:` field resolves to: one colour, or two graded into
+/// each other across the sphere.
+///
+/// No original has a two-colour gem — all 25 in the suite are single. Dual
+/// gems are an extension for custom cards, in the spirit of hybrid mana, and
+/// like black they are invented rather than measured.
+///
+/// Deserialization goes through [`FromStr`], so YAML accepts exactly what the
+/// `validate` command accepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
+pub enum Gem {
+    Single(GemColor),
+    /// First colour on the left of the gem, second on the right. Order is
+    /// preserved, so `wu` and `uw` are mirror images of each other.
+    Dual(GemColor, GemColor),
+}
+
+impl Gem {
+    /// The colours involved, in the order they were written.
+    pub fn colors(self) -> (GemColor, Option<GemColor>) {
+        match self {
+            Gem::Single(a) => (a, None),
+            Gem::Dual(a, b) => (a, Some(b)),
+        }
+    }
+}
+
+impl fmt::Display for Gem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Gem::Single(a) => f.write_str(a.name()),
+            Gem::Dual(a, b) => write!(f, "{}/{}", a.name(), b.name()),
+        }
+    }
+}
+
+impl FromStr for Gem {
+    type Err = String;
+
+    /// Accepts a single colour (`green`, `g`), a slash-separated pair
+    /// (`white/blue`, `w/u`), or a bare two-letter pair (`wu`). Bare pairs are
+    /// unambiguous because no colour *name* is two characters long.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if let Some((a, b)) = s.split_once('/') {
+            return Ok(Gem::Dual(a.parse()?, b.parse()?));
+        }
+        if let Ok(single) = s.parse::<GemColor>() {
+            return Ok(Gem::Single(single));
+        }
+        // Only now try a bare pair, so `red` is never read as `r` + `ed`.
+        let letters: Vec<char> = s.chars().collect();
+        if letters.len() == 2 {
+            if let (Ok(a), Ok(b)) = (
+                letters[0].to_string().parse::<GemColor>(),
+                letters[1].to_string().parse::<GemColor>(),
+            ) {
+                return Ok(Gem::Dual(a, b));
+            }
+        }
+        Err(format!(
+            "unknown gem color {s:?} (expected white, blue, black, red or green, \
+             or a pair such as \"wu\" or \"white/blue\")"
+        ))
+    }
+}
+
+impl TryFrom<String> for Gem {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        s.parse()
+    }
 }
 
 impl TryFrom<String> for GemColor {
@@ -179,21 +259,57 @@ const HUE_EDGE: (f32, f32) = (150.0, 280.0);
 const SAT_LO: f32 = 0.18;
 const SAT_HI: f32 = 0.32;
 
-/// Recolour the gem in place. Blue is the template's own colour and is a no-op.
+/// Fraction of the radius the two-colour gradient spans, either side of centre.
+/// Below 1.0 so each colour reaches full strength before the gem's edge —
+/// otherwise a dual gem never actually shows either colour cleanly.
+const BLEND_SPAN: f32 = 0.7;
+
+/// Recolour the gem in place. A single blue gem is the template's own colour
+/// and is a no-op; a dual gem containing blue is not.
 ///
 /// Operates on the composited canvas, which is why it must run after the
 /// template is laid down and before nothing in particular — no text goes
 /// anywhere near the gem.
-pub fn recolor(canvas: &mut RgbaImage, color: GemColor, layout: &Layout) {
-    if color == GemColor::Blue {
-        return;
+pub fn recolor(canvas: &mut RgbaImage, gem: Gem, layout: &Layout) {
+    match gem {
+        Gem::Single(GemColor::Blue) => {}
+        Gem::Single(c) => recolor_with(canvas, &c.transform(), layout),
+        Gem::Dual(a, b) => recolor_blended(canvas, &a.transform(), &b.transform(), layout),
     }
-    recolor_with(canvas, &color.transform(), layout);
 }
 
 /// Apply an arbitrary transform to the gem. Exists so `examples/fit_gem.rs`
 /// can search for the constants baked into [`GemColor::transform`].
 pub fn recolor_with(canvas: &mut RgbaImage, t: &Transform, layout: &Layout) {
+    each_gem_pixel(canvas, layout, |_, hsv| apply(hsv, t));
+}
+
+/// Grade two transforms into each other from left to right across the gem.
+///
+/// The two *results* are interpolated, not the two transforms. Interpolating
+/// the parameters would take a white-to-red gem's hue shift from -173.5°
+/// through 0° — which is blue, a colour neither half of the gem is.
+fn recolor_blended(canvas: &mut RgbaImage, a: &Transform, b: &Transform, layout: &Layout) {
+    let (cx, _) = layout.gem_center;
+    let span = layout.gem_radius * BLEND_SPAN;
+    each_gem_pixel(canvas, layout, |x, hsv| {
+        let t = smoothstep(cx - span, cx + span, x);
+        let (ar, ag, ab) = apply(hsv, a);
+        let (br, bg, bb) = apply(hsv, b);
+        (blend(ar, br, t), blend(ag, bg, t), blend(ab, bb, t))
+    });
+}
+
+/// Recolour every pixel of the gem, asking `f` what colour it should become.
+///
+/// `f` receives the pixel's x coordinate and its HSV, and returns the fully
+/// recoloured RGB; this function decides which pixels are gem at all and how
+/// strongly, so the result is faded in by that weight rather than replacing
+/// the pixel outright.
+fn each_gem_pixel<F>(canvas: &mut RgbaImage, layout: &Layout, f: F)
+where
+    F: Fn(f32, (f32, f32, f32)) -> (u8, u8, u8),
+{
     let (cx, cy) = layout.gem_center;
     let (r_core, r_edge) = (layout.gem_radius, layout.gem_radius + 2.0);
 
@@ -204,31 +320,35 @@ pub fn recolor_with(canvas: &mut RgbaImage, t: &Transform, layout: &Layout) {
 
     for y in y0..y1 {
         for x in x0..x1 {
-            let dist = ((x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2)).sqrt();
+            let (px_x, px_y) = (x as f32 + 0.5, y as f32 + 0.5);
+            let dist = ((px_x - cx).powi(2) + (px_y - cy).powi(2)).sqrt();
             let w_r = 1.0 - smoothstep(r_core, r_edge, dist);
             if w_r <= 0.0 {
                 continue;
             }
 
             let px = canvas.get_pixel_mut(x, y);
-            let (h, s, v) = rgb_to_hsv(px.0[0], px.0[1], px.0[2]);
-            let w_s = smoothstep(SAT_LO, SAT_HI, s);
-            let w_h = hue_weight(h);
-            let w = w_r * w_s * w_h;
+            let hsv = rgb_to_hsv(px.0[0], px.0[1], px.0[2]);
+            let w = w_r * smoothstep(SAT_LO, SAT_HI, hsv.1) * hue_weight(hsv.0);
             if w <= 0.0 {
                 continue;
             }
 
-            let (nr, ng, nb) = hsv_to_rgb(
-                (h + t.hue_shift).rem_euclid(360.0),
-                (s * t.sat_mul).clamp(0.0, 1.0),
-                v.powf(t.value_gamma),
-            );
+            let (nr, ng, nb) = f(px_x, hsv);
             px.0[0] = blend(px.0[0], nr, w);
             px.0[1] = blend(px.0[1], ng, w);
             px.0[2] = blend(px.0[2], nb, w);
         }
     }
+}
+
+/// One transform applied to one pixel's HSV.
+fn apply((h, s, v): (f32, f32, f32), t: &Transform) -> (u8, u8, u8) {
+    hsv_to_rgb(
+        (h + t.hue_shift).rem_euclid(360.0),
+        (s * t.sat_mul).clamp(0.0, 1.0),
+        v.powf(t.value_gamma),
+    )
 }
 
 fn blend(from: u8, to: u8, w: f32) -> u8 {
@@ -331,18 +451,135 @@ mod tests {
     /// a card that `vgc create` then refuses to load.
     #[test]
     fn deserializes_through_from_str() {
-        let de = |s: &str| serde_yaml::from_str::<GemColor>(s);
-        assert_eq!(de("red").unwrap(), GemColor::Red);
-        assert_eq!(de("R").unwrap(), GemColor::Red);
-        assert_eq!(de("White").unwrap(), GemColor::White);
+        let de = |s: &str| serde_yaml::from_str::<Gem>(s);
+        assert_eq!(de("red").unwrap(), Gem::Single(GemColor::Red));
+        assert_eq!(de("R").unwrap(), Gem::Single(GemColor::Red));
+        assert_eq!(de("White").unwrap(), Gem::Single(GemColor::White));
+        assert_eq!(
+            de("wu").unwrap(),
+            Gem::Dual(GemColor::White, GemColor::Blue)
+        );
         assert!(de("purple").is_err());
+    }
+
+    #[test]
+    fn parses_dual_spellings() {
+        let p = |s: &str| s.parse::<Gem>().unwrap();
+        let wu = Gem::Dual(GemColor::White, GemColor::Blue);
+        assert_eq!(p("wu"), wu);
+        assert_eq!(p("WU"), wu);
+        assert_eq!(p("w/u"), wu);
+        assert_eq!(p("white/blue"), wu);
+        assert_eq!(p(" white / blue "), wu);
+        assert_eq!(p("bg"), Gem::Dual(GemColor::Black, GemColor::Green));
+
+        // Order is meaningful — the two are mirror images, not synonyms.
+        assert_ne!(p("wu"), p("uw"));
+
+        // A colour name must never be split into two letters.
+        assert_eq!(p("red"), Gem::Single(GemColor::Red));
+
+        for bad in ["purple", "wx", "w/purple", "wub", ""] {
+            assert!(bad.parse::<Gem>().is_err(), "{bad:?} should not parse");
+        }
+    }
+
+    #[test]
+    fn display_round_trips() {
+        for s in ["green", "white/blue", "black/green"] {
+            assert_eq!(s.parse::<Gem>().unwrap().to_string(), s);
+        }
+    }
+
+    /// A dual gem must actually show both colours: its left side should look
+    /// like the left colour alone, and its right side like the right colour.
+    /// A blend that collapsed to one colour, or that ignored the order, would
+    /// still have a plausible overall mean — this is what catches that.
+    #[test]
+    fn dual_gem_shows_both_colors() {
+        let (cx, cy) = DEFAULT.gem_center;
+        let half_mean = |img: &RgbaImage, left: bool| {
+            let (mut acc, mut n) = ([0.0f32; 3], 0.0f32);
+            for y in (cy - 12.0) as u32..(cy + 4.0) as u32 {
+                for x in (cx - 12.0) as u32..(cx + 12.0) as u32 {
+                    let (dx, dy) = (x as f32 + 0.5 - cx, y as f32 + 0.5 - cy);
+                    if dx * dx + dy * dy > 121.0 {
+                        continue;
+                    }
+                    // Sample well clear of the gradient's middle.
+                    if left != (dx < -4.0) || (!left && dx < 4.0) {
+                        continue;
+                    }
+                    let p = img.get_pixel(x, y).0;
+                    for c in 0..3 {
+                        acc[c] += p[c] as f32;
+                    }
+                    n += 1.0;
+                }
+            }
+            [acc[0] / n, acc[1] / n, acc[2] / n]
+        };
+
+        let mut dual = template();
+        recolor(
+            &mut dual,
+            Gem::Dual(GemColor::Red, GemColor::Green),
+            &DEFAULT,
+        );
+
+        let left = half_mean(&dual, true);
+        let right = half_mean(&dual, false);
+        assert!(
+            left[0] == left[0].max(left[1]).max(left[2]),
+            "left of a red/green gem is not red: {left:?}"
+        );
+        assert!(
+            right[1] == right[0].max(right[1]).max(right[2]),
+            "right of a red/green gem is not green: {right:?}"
+        );
+
+        // Mirroring the pair must mirror the render.
+        let mut flipped = template();
+        recolor(
+            &mut flipped,
+            Gem::Dual(GemColor::Green, GemColor::Red),
+            &DEFAULT,
+        );
+        let f_left = half_mean(&flipped, true);
+        assert!(
+            f_left[1] == f_left[0].max(f_left[1]).max(f_left[2]),
+            "green/red put green on the wrong side: {f_left:?}"
+        );
+    }
+
+    /// A dual gem of one colour twice must equal that colour on its own.
+    #[test]
+    fn dual_of_one_color_equals_single() {
+        let mut dual = template();
+        recolor(
+            &mut dual,
+            Gem::Dual(GemColor::Green, GemColor::Green),
+            &DEFAULT,
+        );
+        let mut single = template();
+        recolor(&mut single, Gem::Single(GemColor::Green), &DEFAULT);
+        assert_eq!(dual.into_raw(), single.into_raw());
+    }
+
+    /// Blue alone is a no-op, but blue in a pair must not be.
+    #[test]
+    fn dual_containing_blue_still_renders() {
+        let mut img = template();
+        let before = img.clone();
+        recolor(&mut img, Gem::Dual(GemColor::Blue, GemColor::Red), &DEFAULT);
+        assert_ne!(img.into_raw(), before.into_raw());
     }
 
     #[test]
     fn blue_is_the_identity() {
         let mut img = template();
         let before = img.clone();
-        recolor(&mut img, GemColor::Blue, &DEFAULT);
+        recolor(&mut img, Gem::Single(GemColor::Blue), &DEFAULT);
         assert_eq!(img.into_raw(), before.into_raw());
     }
 
@@ -350,7 +587,7 @@ mod tests {
     fn recolor_touches_only_the_gem() {
         let mut img = template();
         let before = img.clone();
-        recolor(&mut img, GemColor::Red, &DEFAULT);
+        recolor(&mut img, Gem::Single(GemColor::Red), &DEFAULT);
         let (cx, cy) = DEFAULT.gem_center;
         let mut changed = 0;
         for (x, y, p) in img.enumerate_pixels() {
@@ -374,7 +611,7 @@ mod tests {
         ];
         for (color, dominant) in cases {
             let mut img = template();
-            recolor(&mut img, color, &DEFAULT);
+            recolor(&mut img, Gem::Single(color), &DEFAULT);
             let (r, g, b) = gem_mean(&img);
             let ch = [r, g, b];
             assert!(
@@ -390,7 +627,7 @@ mod tests {
         let blue_v = blue.0.max(blue.1).max(blue.2);
 
         let mut white = template();
-        recolor(&mut white, GemColor::White, &DEFAULT);
+        recolor(&mut white, Gem::Single(GemColor::White), &DEFAULT);
         let (r, g, b) = gem_mean(&white);
         let spread = r.max(g).max(b) - r.min(g).min(b);
         assert!(
@@ -399,7 +636,7 @@ mod tests {
         );
 
         let mut black = template();
-        recolor(&mut black, GemColor::Black, &DEFAULT);
+        recolor(&mut black, Gem::Single(GemColor::Black), &DEFAULT);
         let (r, g, b) = gem_mean(&black);
         assert!(
             r.max(g).max(b) < blue_v * 0.75,
