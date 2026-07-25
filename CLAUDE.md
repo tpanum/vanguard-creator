@@ -94,9 +94,33 @@ mv -f assets/examples/sliver_queen__brood_mother.png assets/examples/silverqueen
 mv -f assets/examples/sidar_kondo.png assets/examples/sidar.png
 ```
 
+`README.md` also shows `assets/examples/gem_colors.png`, a strip of the bottom bezel in all five gem colours, regenerated the same way:
+
+```sh
+cargo run --release --example gem_swatches
+```
+
 The renames are needed because output filenames come from the card name, while the README links to the shorter slugs. The samples are rendered from `tests/cards/*.yaml` on purpose, so they always show the same card data the accuracy suite scores — those four carry `flavor` text, which the suite drops but the samples need.
 
 Look at the result before committing. The F1 metric never sees the samples: it scores ability text only, on a blank canvas, so nothing in the suite will catch flavor text colliding with the stat bubbles, artwork cropping wrongly, or a symbol rendering at the wrong tone.
+
+## The gem
+
+Every original carries a glossy sphere in the bottom bezel, and it is not always the same colour. Sampling the gem disc out of all 25 scans in `tests/assets/` puts the cards into four tight clusters — blue, green, red, white — so this is a real per-card property, recorded as a **required** `color:` field in each card's YAML. `src/gem.rs` recolours it.
+
+`GemColor` deliberately does not implement `Default`, and `CardDef::color` carries no `#[serde(default)]`. A card that omits the field is an error, not a blue card: blue is a real answer that is right for only a fifth of the set, so defaulting it would render the wrong gem silently instead of saying the card is incomplete. `parse-mse` has nothing in an `.mse-set` to derive the colour from, so it writes `blue` with a comment marking it for review — visible, not silent.
+
+The template is a blue card's, so **blue is the identity and is a strict no-op**. Every other colour is a hue rotation, saturation multiplier and value gamma away from it.
+
+Those constants are *fitted*, not read off the cluster means. Hue rotation and a value gamma are both nonlinear over the gem's pixel distribution, so a transform built from means-of-means lands wide of the mean it was built from — building red that way produced a visibly magenta gem whose own mean was nowhere near the target. `cargo run --release --example fit_gem` iterates each triple until the recoloured gem body's mean equals the cluster mean, divides the result through by the fit for blue so the scanner's colour cast drops out, and writes `target/gem_fit.png` — every rendered gem above the original it was fitted to, magnified. **Look at that sheet before accepting new constants**; the fit converging says only that the means agree, not that the gem looks right.
+
+The recolour is per pixel and deliberately narrow: only pixels inside the gem disc, saturated enough not to be frame metal, and in the blue hue band are touched, and hue is *rotated* rather than assigned. That keeps the sphere's internal hue variation and leaves the warm light bouncing up off the bezel — the same warm colour whatever the gem is — alone.
+
+The clusters do **not** follow Magic colour identity — Serra's gem is green, Volrath's is white, Sidar Kondo's is red. Do not "correct" a card's `color:` to match its colour identity; the values in `tests/cards/*.yaml` are what the scans show.
+
+Black has no original in the suite. Its constants are a judgement call sitting alongside the measured four; only its gamma is solved, for a chosen body value of V ≈ 0.28.
+
+The accuracy suite does not see any of this: it scores text on a blank canvas with no template. The gem's correctness is checked by the unit tests in `src/gem.rs` (blue is byte-identical, nothing outside the disc changes, each colour lands in the right part of colour space) and by eye against `target/gem_fit.png`.
 
 ## Scryfall API
 

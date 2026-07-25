@@ -131,7 +131,16 @@ fn sanitize_filename(name: &str) -> String {
         .to_string()
 }
 
+/// Gem colour written for every imported card. See [`write_yaml`].
+const IMPORTED_COLOR: &str = "blue";
+
 /// Write a card's YAML file.
+///
+/// `color` is required by `CardDef`, and an MSE set carries nothing to derive
+/// it from, so every imported card is written as blue — the colour the bundled
+/// template already has. That keeps the output loadable while leaving a field
+/// to correct; `IMPORTED_COLOR` is emitted with a comment saying so, rather
+/// than silently passing for a checked value.
 fn write_yaml(
     path: &Path,
     name: &str,
@@ -142,7 +151,9 @@ fn write_yaml(
 ) -> Result<()> {
     // Manual YAML serialization to maintain field order per SPECS
     let content = format!(
-        "name: {}\nability: |-\n{}\nhand: \"{}\"\nlife: \"{}\"\nartwork: {}\n",
+        "name: {}\nability: |-\n{}\nhand: \"{}\"\nlife: \"{}\"\n\
+         color: \"{IMPORTED_COLOR}\" # not in the .mse-set — check against the card\n\
+         artwork: {}\n",
         yaml_quote(name),
         ability
             .lines()

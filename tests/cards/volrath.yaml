@@ -3,4 +3,5 @@ ability: "Whenever any of your creatures is put\ninto your graveyard from play, 
 flavor: "The son of Gerrard’s surrogate father, Sidar Kondo, Volrath stole Gerrard’s Legacy and rose to power selling it off piece by piece. Now, he is an evincar, or agent, of the Lord of the Wastes. Armed with exceptional magical powers, he plots to conquer the entire multiverse."
 hand: "+2"
 life: "-3"
+color: "white"
 artwork: "../assets/artwork/volrath.png"

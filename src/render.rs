@@ -7,6 +7,7 @@ use crate::{
     bundle,
     card::{self, CardDef},
     fonts::Fonts,
+    gem,
     layout::{Layout, DEFAULT},
     meta, text,
 };
@@ -32,7 +33,10 @@ pub fn run(
         let card = match CardDef::load(yaml_path) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("warning: skipping {}: {e}", yaml_path.display());
+                // `{e:#}` prints the cause chain — without it a card rejected
+                // for a missing or unknown field reports only "parsing YAML in
+                // <path>", which names the file but not what is wrong with it.
+                eprintln!("warning: skipping {}: {e:#}", yaml_path.display());
                 continue;
             }
         };
@@ -55,7 +59,7 @@ pub fn run(
                 println!("Saved: {}", out_path.display());
             }
             Err(e) => {
-                eprintln!("warning: failed to render {}: {e}", card.name);
+                eprintln!("warning: failed to render {}: {e:#}", card.name);
             }
         }
     }
@@ -137,6 +141,9 @@ pub fn render_card(
 
     if let Some(tmpl) = template {
         imageops::overlay(&mut canvas, tmpl, 0, 0);
+        // The gem is part of the frame, so it only exists once the template is
+        // down. Nothing drawn below reaches it.
+        gem::recolor(&mut canvas, card.color, layout);
     }
 
     draw_name(&mut canvas, &card.name, &fonts.name, layout);
