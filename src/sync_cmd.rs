@@ -2,21 +2,7 @@ use anyhow::{Context, Result};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use crate::card::collect_yaml_files;
-
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('_')
-        .to_lowercase()
-}
+use crate::card::{collect_yaml_files, sanitize_filename};
 
 struct SyncEntry {
     yaml_path: PathBuf,
@@ -98,13 +84,7 @@ pub fn run(paths: &[PathBuf], yes: bool, recursive: bool) -> Result<()> {
         let (artwork_abs, new_artwork_abs, new_artwork_field) = if let Some(ref af) = artwork_field
         {
             let artwork_rel = Path::new(af);
-            let resolved = if artwork_rel.is_absolute() {
-                artwork_rel.to_owned()
-            } else if let Some(parent) = yaml_path.parent() {
-                parent.join(artwork_rel)
-            } else {
-                artwork_rel.to_owned()
-            };
+            let resolved = crate::card::resolve_artwork(yaml_path, artwork_rel);
 
             let current_art_stem = resolved.file_stem().and_then(|s| s.to_str()).unwrap_or("");
 
@@ -343,16 +323,6 @@ fn replace_artwork_value(text: &str, old_value: &str, new_value: &str) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_sanitize_filename() {
-        assert_eq!(sanitize_filename("Gerrard"), "gerrard");
-        assert_eq!(
-            sanitize_filename("Sliver Queen, Brood Mother"),
-            "sliver_queen__brood_mother"
-        );
-        assert_eq!(sanitize_filename("Urza's Saga"), "urza_s_saga");
-    }
 
     #[test]
     fn test_replace_artwork_value_quoted() {

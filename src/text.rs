@@ -3,6 +3,7 @@ use image::{Rgba, RgbaImage};
 use regex::Regex;
 use std::sync::OnceLock;
 
+use crate::layout::Layout;
 use crate::symbols;
 
 // ── Tokenization ─────────────────────────────────────────────────────────────
@@ -12,6 +13,15 @@ pub enum Token {
     Text(String),
     /// Mana symbol name (the content inside {…})
     Symbol(String),
+}
+
+impl Token {
+    fn to_text_repr(&self) -> String {
+        match self {
+            Token::Text(s) => s.clone(),
+            Token::Symbol(name) => format!("{{{name}}}"),
+        }
+    }
 }
 
 fn symbol_re() -> &'static Regex {
@@ -36,6 +46,46 @@ pub fn tokenize(text: &str) -> Vec<Token> {
         tokens.push(Token::Text(text[last..].to_string()));
     }
     tokens
+}
+
+// ── Type specification ───────────────────────────────────────────────────────
+
+/// Everything needed to set a run of text at one size: font scale, line
+/// height, and the square pixel size of inline mana symbols.
+#[derive(Debug, Clone, Copy)]
+pub struct TypeSpec {
+    pub scale: PxScale,
+    pub line_height: f32,
+    pub symbol_size: u32,
+}
+
+impl TypeSpec {
+    /// Ability-text spec: symbols render at exactly the font size.
+    fn ability(size: u32, line_height_factor: f32) -> Self {
+        TypeSpec {
+            scale: PxScale::from(size as f32),
+            line_height: size as f32 * line_height_factor,
+            symbol_size: size,
+        }
+    }
+
+    /// Flavor-text spec: symbols render slightly larger than the font size.
+    fn flavor(size: u32, line_height_factor: f32) -> Self {
+        TypeSpec {
+            scale: PxScale::from(size as f32),
+            line_height: size as f32 * line_height_factor,
+            symbol_size: (size as f32 * 1.1) as u32,
+        }
+    }
+
+    /// Distance from the top of a line box to the text baseline, centering
+    /// the font's ascent+descent within `line_height`.
+    fn baseline_from_top(&self, font: &FontRef) -> f32 {
+        let scaled = font.as_scaled(self.scale);
+        let ascent = scaled.ascent();
+        let descent = -scaled.descent();
+        (self.line_height - (ascent + descent)) / 2.0 + ascent
+    }
 }
 
 // ── Font metrics helpers ──────────────────────────────────────────────────────
@@ -82,7 +132,7 @@ pub fn measure_tokens(tokens: &[Token], font: &FontRef, scale: PxScale, symbol_s
 
 // ── Word-wrapping ─────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum WrappedLine {
     Tokens(Vec<Token>),
     /// Extra inter-paragraph gap (triggered by `\n\n` in input).
@@ -98,15 +148,13 @@ fn wrap_paragraph(
     max_width: f32,
     symbol_size: u32,
 ) -> Vec<Vec<Token>> {
-    let scaled = font.as_scaled(scale);
     let space_w = measure_str(" ", font, scale);
-    let words: Vec<&str> = para.split_whitespace().collect();
 
     let mut lines: Vec<Vec<Token>> = Vec::new();
     let mut current: Vec<Token> = Vec::new();
     let mut current_w = 0.0f32;
 
-    for word in &words {
+    for word in para.split_whitespace() {
         let word_tokens = tokenize(word);
         let word_w: f32 = word_tokens
             .iter()
@@ -128,8 +176,6 @@ fn wrap_paragraph(
             current_w += word_w;
         }
     }
-
-    let _ = scaled;
 
     if !current.is_empty() {
         lines.push(current);
@@ -181,21 +227,118 @@ pub fn wrap_text(
     all_lines
 }
 
-// ── Auto-scaling ──────────────────────────────────────────────────────────────
-
-pub struct FitResult {
-    pub scale: PxScale,
-    pub lines: Vec<WrappedLine>,
-    pub line_height: f32,
-    pub symbol_size: u32,
-    pub flavor_lines: Option<Vec<WrappedLine>>,
-    pub flavor_scale: Option<PxScale>,
-    pub flavor_line_height: Option<f32>,
-    pub flavor_symbol_size: Option<u32>,
+/// Reconstruct a wrappable text string from a slice of WrappedLines.
+/// Consecutive Tokens lines (soft-wrapped) are joined with a space.
+/// ParagraphBreak → "\n\n", HardBreak → "\n".
+fn lines_to_text(lines: &[WrappedLine]) -> String {
+    let mut out = String::new();
+    let mut prev_tokens = false;
+    for line in lines {
+        match line {
+            WrappedLine::Tokens(tokens) => {
+                if prev_tokens {
+                    out.push(' ');
+                }
+                for t in tokens {
+                    out.push_str(&t.to_text_repr());
+                }
+                prev_tokens = true;
+            }
+            WrappedLine::ParagraphBreak => {
+                out.push_str("\n\n");
+                prev_tokens = false;
+            }
+            WrappedLine::HardBreak => {
+                out.push('\n');
+                prev_tokens = false;
+            }
+        }
+    }
+    out
 }
+
+/// Wrap `text` with a two-width split: the first `wide_limit` visible lines
+/// (Tokens entries) are wrapped at `wide_max_width`; any remaining content is
+/// re-wrapped at `narrow_max_width` and returned as the second element.
+///
+/// If the text fits entirely within `wide_limit` lines, the second Vec is empty.
+pub fn wrap_text_split(
+    text: &str,
+    font: &FontRef,
+    scale: PxScale,
+    wide_max_width: f32,
+    narrow_max_width: f32,
+    wide_limit: usize,
+    symbol_size: u32,
+) -> (Vec<WrappedLine>, Vec<WrappedLine>) {
+    let all = wrap_text(text, font, scale, wide_max_width, symbol_size);
+
+    // Count visible content lines (Tokens) plus paragraph separators.
+    let total: usize = all
+        .iter()
+        .filter(|l| matches!(l, WrappedLine::Tokens(_) | WrappedLine::ParagraphBreak))
+        .count();
+    if total <= wide_limit {
+        return (all, Vec::new());
+    }
+
+    // Find the index just after the wide_limit-th visible slot (Tokens or ParagraphBreak).
+    let mut seen = 0usize;
+    let mut split_at = all.len();
+    for (i, line) in all.iter().enumerate() {
+        match line {
+            WrappedLine::Tokens(_) | WrappedLine::ParagraphBreak => {
+                seen += 1;
+                if seen == wide_limit {
+                    split_at = i + 1;
+                    break;
+                }
+            }
+            WrappedLine::HardBreak => {}
+        }
+    }
+
+    let wide_lines: Vec<WrappedLine> = all[..split_at].to_vec();
+    let overflow_text = lines_to_text(&all[split_at..]);
+    let narrow_lines = if overflow_text.trim().is_empty() {
+        Vec::new()
+    } else {
+        wrap_text(
+            overflow_text.trim(),
+            font,
+            scale,
+            narrow_max_width,
+            symbol_size,
+        )
+    };
+
+    (wide_lines, narrow_lines)
+}
+
+// ── Fitting ───────────────────────────────────────────────────────────────────
+
+/// Number of ability lines allowed to use the full text-box width before the
+/// remainder falls back to the narrow width between the stat-bubble frames.
+const WIDE_LINE_LIMIT: usize = 3;
 
 /// Height consumed by the separator region between ability and flavor text.
 const SEPARATOR_H: f32 = 1.0;
+
+/// A fitted flavor-text block.
+pub struct FlavorFit {
+    pub spec: TypeSpec,
+    pub lines: Vec<WrappedLine>,
+}
+
+/// A fully fitted rules-text block, ready to draw.
+pub struct RulesFit {
+    pub spec: TypeSpec,
+    /// Ability lines 1-3, wrapped at the full text-box width.
+    pub lines: Vec<WrappedLine>,
+    /// Ability lines 4+, wrapped at the narrower width (empty when ≤ 3 lines).
+    pub narrow_lines: Vec<WrappedLine>,
+    pub flavor: Option<FlavorFit>,
+}
 
 fn block_height(lines: &[WrappedLine], line_height: f32, para_gap: f32) -> f32 {
     lines
@@ -208,90 +351,144 @@ fn block_height(lines: &[WrappedLine], line_height: f32, para_gap: f32) -> f32 {
         .sum()
 }
 
-/// Fit ability and flavor text into `box_height`.
+/// Count visible (Tokens) lines in a WrappedLine slice.
+fn count_tokens(lines: &[WrappedLine]) -> usize {
+    lines
+        .iter()
+        .filter(|l| matches!(l, WrappedLine::Tokens(_)))
+        .count()
+}
+
+/// Fit ability and flavor text within the layout's text box.
 ///
-/// Ability text is always rendered at the largest size where it fits alone.
-/// Flavor text then independently auto-scales to fill the remaining space.
-#[allow(clippy::too_many_arguments)]
-pub fn fit_ability_text(
+/// Ability text is always rendered at `layout.ability_size` — there is no
+/// auto-scaling. Lines 1-3 use the normal margins; if a 4th line would be
+/// needed, expanded margins are tried first, and any remaining lines fall back
+/// to the narrow width between the stat-bubble frames. Warnings are printed
+/// when the text exceeds the line limit or the push-up-free height.
+///
+/// Flavor text auto-scales downward until it fits the remaining vertical space
+/// (bottoming out at `layout.flavor_size_min`).
+pub fn fit_rules_text(
     ability: &str,
     flavor: Option<&str>,
     font: &FontRef,
     flavor_font: &FontRef,
-    max_width: f32,
-    box_height: f32,
-    size_max: u32,
-    size_min: u32,
-    para_gap: f32,
-    line_height_factor: f32,
-) -> FitResult {
-    // Pass 1: find largest size where ability text alone fits.
-    let (scale, lines, line_height, symbol_size) = (size_min..=size_max)
-        .rev()
-        .find_map(|size| {
-            let scale = PxScale::from(size as f32);
-            let symbol_size = (size as f32 * 1.1) as u32;
-            let line_height = size as f32 * line_height_factor;
-            let lines = wrap_text(ability, font, scale, max_width, symbol_size);
-            let h = block_height(&lines, line_height, para_gap);
-            if h <= box_height {
-                Some((scale, lines, line_height, symbol_size))
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| {
-            // Fallback: min size
-            let scale = PxScale::from(size_min as f32);
-            let symbol_size = (size_min as f32 * 1.1) as u32;
-            let line_height = size_min as f32 * line_height_factor;
-            let lines = wrap_text(ability, font, scale, max_width, symbol_size);
-            (scale, lines, line_height, symbol_size)
-        });
+    layout: &Layout,
+) -> RulesFit {
+    let size = layout.ability_size;
+    let spec = TypeSpec::ability(size, layout.line_height_factor);
 
-    // Pass 2: fit flavor text into the space below the ability block.
-    let (flavor_lines, flavor_scale, flavor_line_height, flavor_symbol_size) = match flavor {
-        None => (None, None, None, None),
-        Some(flav) => {
-            let ability_h = block_height(&lines, line_height, para_gap);
-            let remaining = box_height - ability_h - para_gap - SEPARATOR_H - para_gap;
-
-            let result = (size_min..=size_max).rev().find_map(|size| {
-                let fscale = PxScale::from(size as f32);
-                let fsym = (size as f32 * 1.1) as u32;
-                let flh = size as f32 * line_height_factor;
-                let fl = wrap_text(flav, flavor_font, fscale, max_width, fsym);
-                let fh = block_height(&fl, flh, para_gap);
-                if fh <= remaining {
-                    Some((fl, fscale, flh, fsym))
-                } else {
-                    None
-                }
-            });
-
-            match result {
-                Some((fl, fscale, flh, fsym)) => (Some(fl), Some(fscale), Some(flh), Some(fsym)),
-                None => {
-                    // Fallback: min size
-                    let fscale = PxScale::from(size_min as f32);
-                    let fsym = (size_min as f32 * 1.1) as u32;
-                    let flh = size_min as f32 * line_height_factor;
-                    let fl = wrap_text(flav, flavor_font, fscale, max_width, fsym);
-                    (Some(fl), Some(fscale), Some(flh), Some(fsym))
-                }
-            }
+    // Try normal margins first; if a 4th line is needed, retry with expanded
+    // margins before accepting the narrow split.
+    let (lines, narrow_lines) = {
+        let (wide, narrow) = wrap_text_split(
+            ability,
+            font,
+            spec.scale,
+            layout.rules_width(),
+            layout.rules_width_narrow(),
+            WIDE_LINE_LIMIT,
+            spec.symbol_size,
+        );
+        if narrow.is_empty() {
+            (wide, narrow)
+        } else {
+            wrap_text_split(
+                ability,
+                font,
+                spec.scale,
+                layout.rules_width_expanded(),
+                layout.rules_width_narrow(),
+                WIDE_LINE_LIMIT,
+                spec.symbol_size,
+            )
         }
     };
 
-    FitResult {
-        scale,
+    let total_lines = count_tokens(&lines) + count_tokens(&narrow_lines);
+    if total_lines > layout.max_ability_lines {
+        eprintln!(
+            "warning: ability text wraps to {total_lines} lines at size {size} — \
+             exceeds the {}-line limit",
+            layout.max_ability_lines
+        );
+    }
+
+    let ability_h = block_height(&lines, spec.line_height, layout.para_gap)
+        + block_height(&narrow_lines, spec.line_height, layout.para_gap);
+    if ability_h > layout.pushup_free_height() {
+        eprintln!(
+            "warning: ability text block ({ability_h:.0}px) exceeds push-up-free height \
+             ({:.0}px) — text would rise above the y_start floor",
+            layout.pushup_free_height()
+        );
+    }
+
+    // Flavor text auto-scales to fill the remaining vertical space.
+    let flavor = flavor.map(|flav| {
+        let remaining =
+            layout.text_box.height() - ability_h - layout.para_gap - SEPARATOR_H - layout.para_gap;
+
+        let fit_at = |size: u32| {
+            let spec = TypeSpec::flavor(size, layout.line_height_factor);
+            let lines = wrap_text(
+                flav,
+                flavor_font,
+                spec.scale,
+                layout.rules_width(),
+                spec.symbol_size,
+            );
+            FlavorFit { spec, lines }
+        };
+
+        (layout.flavor_size_min..=size)
+            .rev()
+            .map(fit_at)
+            .find(|f| block_height(&f.lines, f.spec.line_height, layout.para_gap) <= remaining)
+            .unwrap_or_else(|| fit_at(layout.flavor_size_min))
+    });
+
+    RulesFit {
+        spec,
         lines,
-        line_height,
-        symbol_size,
-        flavor_lines,
-        flavor_scale,
-        flavor_line_height,
-        flavor_symbol_size,
+        narrow_lines,
+        flavor,
+    }
+}
+
+/// Compute the horizontal stretch/shrink for a card name.
+///
+/// The default scale stretches glyphs horizontally (x > y). If the stretched
+/// name exceeds `name_max_width` the stretch is reduced until it exactly fills
+/// the maximum; if even the natural (unstretched) width exceeds the maximum,
+/// both axes shrink proportionally.
+pub fn fit_name_scale(name: &str, font: &FontRef, layout: &Layout) -> PxScale {
+    let (x_pts, y_pts) = layout.name_scale;
+    let stretch_ratio = x_pts / y_pts;
+    let uniform_scale = PxScale { x: y_pts, y: y_pts };
+    let natural_w = measure_str(name, font, uniform_scale);
+    let stretched_w = natural_w * stretch_ratio;
+
+    if stretched_w <= layout.name_max_width {
+        // Stretch fits: apply the full default stretch ratio.
+        PxScale {
+            x: y_pts * stretch_ratio,
+            y: y_pts,
+        }
+    } else if natural_w <= layout.name_max_width {
+        // Stretched exceeds max but natural fits: reduce stretch to exactly fill max.
+        PxScale {
+            x: y_pts * (layout.name_max_width / natural_w),
+            y: y_pts,
+        }
+    } else {
+        // Even natural width exceeds max: scale both axes down proportionally.
+        let f = layout.name_max_width / natural_w;
+        PxScale {
+            x: y_pts * f,
+            y: y_pts * f,
+        }
     }
 }
 
@@ -379,94 +576,78 @@ pub fn draw_centered_text(
     draw_text_at_baseline(canvas, text, pen_x, baseline_y, font, scale, color);
 }
 
-// ── Ability text block rendering ──────────────────────────────────────────────
+// ── Rules text block rendering ────────────────────────────────────────────────
 
-/// Render the full ability text block onto the canvas.
+/// Render the full rules text block onto the canvas.
 ///
-/// Ability text is top-aligned at `box_top + top_padding`. Flavor text follows
-/// after the separator. This matches the original card layout where ability text
-/// always occupies the top of the text box regardless of flavor presence.
-///
-/// * `text_box` — (left, top, right, bottom) in pixels
-#[allow(clippy::too_many_arguments)]
-pub fn draw_ability_text(
+/// Ability lines 1-3 are drawn centered in `layout.text_box`; lines 4+ (if
+/// any) are drawn centered in `layout.narrow_text_box` to stay clear of the
+/// stat-bubble frames. Flavor text follows after the separator using the same
+/// centering as the last ability line.
+pub fn draw_rules_text(
     canvas: &mut RgbaImage,
-    fit: &FitResult,
-    text_box: (u32, u32, u32, u32),
+    fit: &RulesFit,
     font: &FontRef,
     flavor_font: &FontRef,
-    para_gap: f32,
-    centering_height: f32,
-    stroke: u32,
+    layout: &Layout,
     color: [u8; 3],
 ) {
-    let (box_left, box_top, box_right, box_bottom) = text_box;
-    let center_x = (box_left + box_right) as f32 / 2.0;
+    let center_x = layout.text_box.center_x();
+    let narrow_center_x = layout.narrow_text_box.center_x();
 
-    let baseline_offset = |f: &FontRef, scale: PxScale, lh: f32| {
-        let scaled = f.as_scaled(scale);
-        let ascent = scaled.ascent();
-        let descent = -scaled.descent();
-        let text_total_h = ascent + descent;
-        (lh - text_total_h) / 2.0 + ascent
-    };
+    let ability_h = block_height(&fit.lines, fit.spec.line_height, layout.para_gap)
+        + block_height(&fit.narrow_lines, fit.spec.line_height, layout.para_gap);
 
-    let ability_baseline_from_top = baseline_offset(font, fit.scale, fit.line_height);
-
-    let block_h = block_height(&fit.lines, fit.line_height, para_gap);
-    let box_h = (box_bottom - box_top) as f32;
-    // Short blocks: center within the calibrated centering region (preserves original
-    // card feel for 1-3 lines).  Tall blocks that exceed that region: center within
-    // the full text box so they don't snap to the top and leave a gap at the bottom.
-    // In both cases, clamp y_start to a minimum of 658 so very long blocks can never
-    // be pushed above that line (floor, not ceiling — short texts are unaffected).
-    let offset = if block_h <= centering_height {
-        (centering_height - block_h) / 2.0
+    // Short blocks: center within the calibrated centering region.
+    // Tall blocks that exceed that region: center within the full text box.
+    // y_start is floored at rules_min_y so long blocks never drift above it.
+    let offset = if ability_h <= layout.rules_centering_height {
+        (layout.rules_centering_height - ability_h) / 2.0
     } else {
-        ((box_h - block_h) / 2.0).max(0.0)
+        ((layout.text_box.height() - ability_h) / 2.0).max(0.0)
     };
-    let min_y = 658.0_f32;
-    let mut y = (box_top as f32 + offset)
-        .max(min_y)
-        .min(box_top as f32 + (box_h - block_h).max(0.0));
+    let mut y = (layout.text_box.top as f32 + offset).max(layout.rules_min_y);
 
-    // Draw ability lines
+    // Ability lines 1-3 (full-width centering)
     draw_lines(
         canvas,
         &fit.lines,
         font,
-        fit.scale,
-        fit.symbol_size,
-        fit.line_height,
-        ability_baseline_from_top,
+        &fit.spec,
         center_x,
-        para_gap,
-        stroke,
+        layout.para_gap,
         color,
         &mut y,
     );
 
-    // Draw separator and flavor if present
-    if let (Some(fl), Some(fscale), Some(flh), Some(fsym)) = (
-        &fit.flavor_lines,
-        fit.flavor_scale,
-        fit.flavor_line_height,
-        fit.flavor_symbol_size,
-    ) {
-        y += para_gap + SEPARATOR_H + para_gap;
+    // Ability lines 4+ (narrow centering)
+    draw_lines(
+        canvas,
+        &fit.narrow_lines,
+        font,
+        &fit.spec,
+        narrow_center_x,
+        layout.para_gap,
+        color,
+        &mut y,
+    );
 
-        let flavor_baseline_from_top = baseline_offset(flavor_font, fscale, flh);
+    // Flavor text after the separator, centered like the last ability line.
+    if let Some(flavor) = &fit.flavor {
+        let flavor_cx = if fit.narrow_lines.is_empty() {
+            center_x
+        } else {
+            narrow_center_x
+        };
+        y += layout.para_gap + SEPARATOR_H + layout.para_gap;
+
         draw_lines(
             canvas,
-            fl,
+            &flavor.lines,
             flavor_font,
-            fscale,
-            fsym,
-            flh,
-            flavor_baseline_from_top,
-            center_x,
-            para_gap,
-            0,
+            &flavor.spec,
+            flavor_cx,
+            layout.para_gap,
             color,
             &mut y,
         );
@@ -478,32 +659,13 @@ fn draw_lines(
     canvas: &mut RgbaImage,
     lines: &[WrappedLine],
     font: &FontRef,
-    scale: PxScale,
-    symbol_size: u32,
-    line_height: f32,
-    baseline_from_top: f32,
+    spec: &TypeSpec,
     center_x: f32,
     para_gap: f32,
-    stroke: u32,
     color: [u8; 3],
     y: &mut f32,
 ) {
-    // Stroke offsets: draw text at each offset before the final on-pixel pass.
-    // This thickens strokes uniformly, simulating a weight between regular and bold.
-    let offsets: &[(f32, f32)] = match stroke {
-        0 => &[],
-        1 => &[(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)],
-        _ => &[
-            (-1.0, -1.0),
-            (-1.0, 0.0),
-            (-1.0, 1.0),
-            (0.0, -1.0),
-            (0.0, 1.0),
-            (1.0, -1.0),
-            (1.0, 0.0),
-            (1.0, 1.0),
-        ],
-    };
+    let baseline_from_top = spec.baseline_from_top(font);
 
     for line in lines {
         match line {
@@ -514,57 +676,34 @@ fn draw_lines(
                 // No extra spacing — next Tokens line advances by line_height as normal.
             }
             WrappedLine::Tokens(tokens) => {
-                let line_w = measure_tokens(tokens, font, scale, symbol_size);
+                let line_w = measure_tokens(tokens, font, spec.scale, spec.symbol_size);
                 let mut x = center_x - line_w / 2.0;
                 let baseline_y = *y + baseline_from_top;
-                let sym_center_y = *y + line_height / 2.0;
+                let sym_center_y = *y + spec.line_height / 2.0;
 
                 for token in tokens {
-                    match token {
-                        Token::Text(s) => {
-                            for &(dx, dy) in offsets {
-                                draw_text_at_baseline(
-                                    canvas,
-                                    s,
-                                    x + dx,
-                                    baseline_y + dy,
-                                    font,
-                                    scale,
-                                    color,
-                                );
-                            }
-                            let advance =
-                                draw_text_at_baseline(canvas, s, x, baseline_y, font, scale, color);
-                            x += advance;
-                        }
-                        Token::Symbol(name) => {
-                            if let Some(sym_img) = symbols::load(name, symbol_size) {
-                                let sy = (sym_center_y - symbol_size as f32 / 2.0) as i64;
-                                image::imageops::overlay(canvas, &sym_img, x as i64, sy);
-                                x += symbol_size as f32;
-                            } else {
-                                let fallback = format!("{{{name}}}");
-                                for &(dx, dy) in offsets {
-                                    draw_text_at_baseline(
-                                        canvas,
-                                        &fallback,
-                                        x + dx,
-                                        baseline_y + dy,
-                                        font,
-                                        scale,
-                                        color,
-                                    );
-                                }
-                                let advance = draw_text_at_baseline(
-                                    canvas, &fallback, x, baseline_y, font, scale, color,
-                                );
-                                x += advance;
-                            }
+                    // A known symbol renders as an image; anything else falls
+                    // back to its literal text form.
+                    if let Token::Symbol(name) = token {
+                        if let Some(sym_img) = symbols::load(name, spec.symbol_size) {
+                            let sy = (sym_center_y - spec.symbol_size as f32 / 2.0) as i64;
+                            image::imageops::overlay(canvas, &sym_img, x as i64, sy);
+                            x += spec.symbol_size as f32;
+                            continue;
                         }
                     }
+                    x += draw_text_at_baseline(
+                        canvas,
+                        &token.to_text_repr(),
+                        x,
+                        baseline_y,
+                        font,
+                        spec.scale,
+                        color,
+                    );
                 }
 
-                *y += line_height;
+                *y += spec.line_height;
             }
         }
     }

@@ -1,22 +1,23 @@
+use ab_glyph::FontRef;
+use anyhow::{Context, Result};
+
 use crate::bundle;
 
-/// Title font (Fremont Regular).
-pub fn name_data() -> &'static [u8] {
-    bundle::font("Fremont-Regular.ttf")
+/// The embedded card fonts, parsed and ready to render with.
+pub struct Fonts {
+    /// Title font (Fremont Regular).
+    pub name: FontRef<'static>,
+    /// Body text font (MPlantin Bold).
+    pub body: FontRef<'static>,
 }
 
-/// Body text font (MPlantin).
-#[allow(dead_code)]
-pub fn body_data() -> &'static [u8] {
-    bundle::font("Mplantin.ttf")
-}
-
-/// Bold body text font (MPlantin Bold).
-pub fn body_bold_data() -> &'static [u8] {
-    bundle::font("Mplantin-Bold.ttf")
-}
-
-/// Embedded card template image.
-pub fn template_data() -> &'static [u8] {
-    bundle::TEMPLATE
+impl Fonts {
+    pub fn load() -> Result<Self> {
+        Ok(Fonts {
+            name: FontRef::try_from_slice(bundle::font("Fremont-Regular.ttf"))
+                .context("parsing embedded title font")?,
+            body: FontRef::try_from_slice(bundle::font("Mplantin-Bold.ttf"))
+                .context("parsing embedded body font")?,
+        })
+    }
 }
