@@ -58,6 +58,23 @@ The 1997 cards were broken by hand, not by a width rule — Sidar Kondo breaks a
 
 **When a test score seems unusually low (e.g. below 10%), always generate and inspect the diff image before drawing conclusions.** The diff (black = correct, red = missed, green = extra) immediately reveals whether the problem is a positional offset, wrong font, wrong line-breaking, or a bad mask. Do not attempt to diagnose low scores from band statistics alone — look at the diff first.
 
+## README sample images
+
+`README.md` shows four rendered cards beside scans of the originals, from `assets/examples/`. The `*_org.*` files are the originals and never change; the four rendered ones are build output and go stale the moment anything about rendering changes.
+
+**Regenerate them in the same commit as any change to rendering** — `src/text.rs`, `src/render.rs`, `src/layout.rs`, the bundled fonts or symbols, or a card definition the samples use. A reader compares those images against the originals to judge the tool; a stale sample misrepresents it.
+
+```sh
+cargo run --release -- create tests/cards/gerrard.yaml tests/cards/silverqueen.yaml \
+    tests/cards/sidarkondo.yaml tests/cards/volrath.yaml -o assets/examples
+mv -f assets/examples/sliver_queen__brood_mother.png assets/examples/silverqueen.png
+mv -f assets/examples/sidar_kondo.png assets/examples/sidar.png
+```
+
+The renames are needed because output filenames come from the card name, while the README links to the shorter slugs. The samples are rendered from `tests/cards/*.yaml` on purpose, so they always show the same card data the accuracy suite scores — those four carry `flavor` text, which the suite drops but the samples need.
+
+Look at the result before committing. The F1 metric never sees the samples: it scores ability text only, on a blank canvas, so nothing in the suite will catch flavor text colliding with the stat bubbles, artwork cropping wrongly, or a symbol rendering at the wrong tone.
+
 ## Scryfall API
 
 Vanguard card metadata can be looked up via the Scryfall search API:

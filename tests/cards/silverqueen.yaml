@@ -1,5 +1,6 @@
 name: "Sliver Queen, Brood Mother"
 ability: "{3}: Put a Sliver token into play. Treat this\ntoken as a 1/1 colorless creature."
+flavor: "Though long held captive beneath Volrath’s stronghold, the sliver queen is actually freer than most of Rath’s denizens. Her maternal instincts always take precedence—even when they conflict with the evincar’s agenda—and through her numerous litters, she ranges across all of Rath."
 hand: "+0"
 life: "+8"
 artwork: "../assets/artwork/sliver.png"

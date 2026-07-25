@@ -430,13 +430,16 @@ pub fn fit_rules_text(
         let remaining =
             layout.text_box.height() - ability_h - layout.para_gap - SEPARATOR_H - layout.para_gap;
 
+        // Flavor text sits at the bottom of the box, where the stat-bubble
+        // housings cut into it from both sides, so it wraps to the narrow width
+        // even when the ability above it runs the full width of the box.
         let fit_at = |size: u32| {
             let spec = TypeSpec::flavor(size, layout);
             let lines = wrap_text(
                 flav,
                 flavor_font,
                 spec.scale,
-                layout.rules_width(),
+                layout.rules_width_narrow(),
                 spec.symbol_size,
             );
             FlavorFit { spec, lines }
