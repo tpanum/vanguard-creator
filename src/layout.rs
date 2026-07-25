@@ -32,6 +32,7 @@ impl Rect {
 
 /// Template layout coordinates for the 718×1024 Vanguard card template.
 /// All values are pixel coordinates measured from the reference template.
+#[derive(Debug, Clone)]
 pub struct Layout {
     /// Artwork transparent region
     pub art_box: Rect,
@@ -78,6 +79,21 @@ pub struct Layout {
     pub rules_min_y: f32,
     /// Maximum number of visible ability-text lines (Tokens entries) accepted.
     pub max_ability_lines: usize,
+    /// Exponent applied to glyph coverage before compositing: `a' = a^ink_gain`.
+    ///
+    /// A clean outline rasterizer lays down noticeably less ink than a printing
+    /// press does. Real ink spreads into the paper, so a printed stroke is
+    /// fractionally wider than its outline and its edge pixels are darker than
+    /// pure area coverage predicts. Values below 1.0 reproduce that spread,
+    /// 1.0 disables it. This is not faux-bold: it does not touch the outline,
+    /// only how the antialiased edge is weighted, so glyph shapes and advance
+    /// widths are untouched.
+    pub ink_gain: f32,
+    /// Inline mana symbol size, as a fraction of the surrounding font size.
+    pub symbol_scale: f32,
+    /// Vertical nudge of inline mana symbols, in pixels, positive = down.
+    /// Symbols are otherwise centered on the line box.
+    pub symbol_y_offset: f32,
 }
 
 impl Layout {
@@ -107,20 +123,23 @@ impl Layout {
 /// Coordinates for ability text and stats derived from mask measurements.
 pub const DEFAULT: Layout = Layout {
     art_box: Rect::new(86, 111, 632, 588),
-    name_center: (359, 79),
-    text_box: Rect::new(100, 640, 620, 835),
-    hand_center: (100, 879),
+    name_center: (356, 79),
+    text_box: Rect::new(98, 640, 618, 835),
+    hand_center: (100, 878),
     life_center: (613, 879),
-    text_padding: 22,
+    text_padding: 14,
     para_gap: 20.0,
     ability_size: 24,
     flavor_size_min: 14,
-    name_scale: (71.0, 57.0),
-    name_max_width: 460.0,
+    name_scale: (73.0, 51.5),
+    name_max_width: 465.0,
     line_height_factor: 1.25,
     rules_centering_height: 126.0,
     stats_size: 30.0,
     narrow_text_box: Rect::new(144, 640, 574, 835),
     rules_min_y: 658.0,
     max_ability_lines: 8,
+    ink_gain: 0.75,
+    symbol_scale: 1.05,
+    symbol_y_offset: 1.0,
 };

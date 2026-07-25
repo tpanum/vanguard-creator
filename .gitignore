@@ -6,3 +6,5 @@ tests/fixtures/*_rendered.png
 tests/fixtures/*_diff.png
 .#*
 .playwright-mcp/
+
+tests/fixtures/*_ref_preview.png

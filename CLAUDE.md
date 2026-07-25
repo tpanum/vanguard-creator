@@ -11,17 +11,48 @@ Where customisation makes sense (e.g. swapping the card template for a fan-made 
 
 Whenever designing or modifying text insertion (placement, sizing, font, layout), you MUST use the text-pixel F1 score as the feedback metric. Raw pixel diff is useless here because the template background dominates the signal.
 
-The method (implemented in `tests/render_tests.rs`):
-1. For each text region (title, rules, left bubble, right bubble), render **only that element** onto a blank 718×1024 canvas using the exact same `text::*` functions called by `render::render_card`.
+The method (driven by `tests/common/mod.rs`, one test per row of `CASES`):
+1. For each text region (title, rules, left bubble, right bubble), render **only that element** onto a blank 718×1024 canvas using the exact same `render::draw_*` functions called by `render::render_card`.
 2. Scale the reference mask to 718×1024.
 3. Binarize both at luma < 128 (dark pixels = text).
 4. Compute precision, recall, and F1 over the binary text-pixel masks.
+
+### Reference masks
+
+Rules text and stat bubbles are scored against `tests/fixtures/*_ref.png`, segmented straight from the card scans in `tests/assets/` by `tests/build_masks.rs`. Titles are gold-on-dark and do not segment cleanly, so they keep their hand-traced `*_title_mask.png`.
+
+Do not go back to hand-traced masks for the scan-derived regions. The hand masks they replaced carried ~20% more ink than the scans they came from and contained no mana symbols at all, which biased every measurement toward type that was too heavy and scored a correctly drawn `{3}` as a block of false positives.
+
+Regenerate with `cargo test --release --test build_masks -- --ignored --nocapture`, and always eyeball `preview_reference_masks` output before trusting a score built on a regenerated mask.
+
+### Reading a failure
+
+Every case prints a diagnosis, not just a number: ink volume vs the reference, both bounding boxes, the translation and uniform scale that would maximise F1, the F1 those would reach, and a per-line table. The gap between `F1` and `aligned` is placement error you can fix from `layout.rs`; what remains below 100% is glyph shape, weight, and line breaking. `cargo test -- --ignored accuracy_report --nocapture` prints the whole suite as one table.
+
+### Calibrating
+
+`tests/calibrate.rs` coordinate-descends the `Layout` constants against mean F1 and prints suggested values; `KNOB=<name> … explain_knob` breaks a single knob down per card, which is how you tell a real layout error from one card's scan being off-register. `tests/font_search.rs` scores candidate typefaces, re-fitting the size knob per face so a face is not rejected merely for having different metrics.
+
+### Where F1 must not be trusted
+
+F1 compares *binarized* images, so it is blind to antialiasing and will always reward driving `layout.ink_gain` toward zero — which solidifies every partially covered edge pixel and makes the real card look jagged. `ink_gain` is therefore excluded from the calibrator and set by `tune_ink_gain`, which picks the value where the render lays down the same ink volume as the original (ratio ≈ 1.00). Any future knob that can trade antialiasing for coverage needs the same treatment.
 
 **The test helpers MUST always call the same `text::*` functions, with the same arguments, as `render::render_card` does.** If the production render path changes, the corresponding test helper must be updated in the same commit. Tests that call different functions or use different parameters do not validate the actual output.
 
 **Do NOT modify test cases (thresholds, reference fixtures, or test logic) without explicit permission from the user.** The tests encode hard-won knowledge about what correct rendering looks like. Lowering a threshold or updating a fixture to make a failing test pass hides a real regression — it does not fix it. If a test fails, investigate and fix the production code; do not adjust the test to accommodate broken output.
 
 Run with `UPDATE_FIXTURES=1 cargo test -- --nocapture` to save rendered images and diff maps to `tests/fixtures/` for visual inspection.
+
+## Text anchoring
+
+Two anchors, and they are not interchangeable:
+
+- **Stat bubbles** use `text::draw_text_centered_on_ink`. The target is a circle stamped on the template, so what must sit in its middle is the visible `-4`, not the typographic slot around it. Centering on the font's ascent-plus-descent reserves descender space that digits never use and pushes them ~3 px low.
+- **Card names** use `text::draw_text_centered_on_baseline`. A banner needs every name on the same baseline, so the vertical position must depend only on the font and its size — never on whether the name happens to contain a descender. Ink-centering a title makes `Volrath` ride higher than `Sliver Queen, Brood Mother`.
+
+## Original line breaks
+
+The 1997 cards were broken by hand, not by a width rule — Sidar Kondo breaks after `+3/+3` with room to spare on the line. Where a card's true breaks are known, encode them as `\n` in its YAML; the auto-wrap is a fallback for new cards, and scoring against it measures the wrap heuristic rather than the rendering. All four reference cards carry their originals' breaks.
 
 **The F1 score is the ground truth for rendering quality. If a change causes F1 to drop, the change made things worse — revert or iterate until F1 recovers or improves. If F1 improves, the change is an improvement. Do not override this metric with subjective impressions.**
 

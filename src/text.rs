@@ -60,21 +60,21 @@ pub struct TypeSpec {
 }
 
 impl TypeSpec {
-    /// Ability-text spec: symbols render at exactly the font size.
-    fn ability(size: u32, line_height_factor: f32) -> Self {
+    /// Ability-text spec.
+    fn ability(size: u32, layout: &Layout) -> Self {
         TypeSpec {
             scale: PxScale::from(size as f32),
-            line_height: size as f32 * line_height_factor,
-            symbol_size: size,
+            line_height: size as f32 * layout.line_height_factor,
+            symbol_size: (size as f32 * layout.symbol_scale).round().max(1.0) as u32,
         }
     }
 
-    /// Flavor-text spec: symbols render slightly larger than the font size.
-    fn flavor(size: u32, line_height_factor: f32) -> Self {
+    /// Flavor-text spec: symbols render slightly larger relative to the text.
+    fn flavor(size: u32, layout: &Layout) -> Self {
         TypeSpec {
             scale: PxScale::from(size as f32),
-            line_height: size as f32 * line_height_factor,
-            symbol_size: (size as f32 * 1.1) as u32,
+            line_height: size as f32 * layout.line_height_factor,
+            symbol_size: (size as f32 * layout.symbol_scale * 1.1).round().max(1.0) as u32,
         }
     }
 
@@ -377,7 +377,7 @@ pub fn fit_rules_text(
     layout: &Layout,
 ) -> RulesFit {
     let size = layout.ability_size;
-    let spec = TypeSpec::ability(size, layout.line_height_factor);
+    let spec = TypeSpec::ability(size, layout);
 
     // Try normal margins first; if a 4th line is needed, retry with expanded
     // margins before accepting the narrow split.
@@ -431,7 +431,7 @@ pub fn fit_rules_text(
             layout.text_box.height() - ability_h - layout.para_gap - SEPARATOR_H - layout.para_gap;
 
         let fit_at = |size: u32| {
-            let spec = TypeSpec::flavor(size, layout.line_height_factor);
+            let spec = TypeSpec::flavor(size, layout);
             let lines = wrap_text(
                 flav,
                 flavor_font,
@@ -494,6 +494,33 @@ pub fn fit_name_scale(name: &str, font: &FontRef, layout: &Layout) -> PxScale {
 
 // ── Rasterization helpers ─────────────────────────────────────────────────────
 
+/// How to lay ink down: what color, and how much the edge of a stroke spreads.
+///
+/// Carried together because every drawing call needs both, and because keeping
+/// `ink_gain` beside the color makes it obvious at each call site that the
+/// weight of the type is a rendering parameter, not a property of the font.
+#[derive(Debug, Clone, Copy)]
+pub struct Pen {
+    pub color: [u8; 3],
+    /// See `Layout::ink_gain`. 1.0 leaves coverage untouched.
+    pub gain: f32,
+}
+
+impl Pen {
+    pub fn new(color: [u8; 3], gain: f32) -> Pen {
+        Pen { color, gain }
+    }
+
+    /// Coverage after simulated ink spread.
+    fn apply(&self, coverage: f32) -> f32 {
+        if self.gain == 1.0 {
+            coverage
+        } else {
+            coverage.clamp(0.0, 1.0).powf(self.gain)
+        }
+    }
+}
+
 /// Blend a foreground color onto a background pixel using porter-duff "over".
 fn blend(bg: &Rgba<u8>, fg: [u8; 3], coverage: f32) -> Rgba<u8> {
     let a = coverage.clamp(0.0, 1.0);
@@ -513,7 +540,7 @@ pub fn draw_text_at_baseline(
     baseline_y: f32,
     font: &FontRef,
     scale: PxScale,
-    color: [u8; 3],
+    pen: Pen,
 ) -> f32 {
     let scaled = font.as_scaled(scale);
     let mut x = pen_x;
@@ -542,7 +569,11 @@ pub fn draw_text_at_baseline(
                     && (cy as u32) < canvas.height()
                 {
                     let existing = *canvas.get_pixel(cx as u32, cy as u32);
-                    canvas.put_pixel(cx as u32, cy as u32, blend(&existing, color, coverage));
+                    canvas.put_pixel(
+                        cx as u32,
+                        cy as u32,
+                        blend(&existing, pen.color, pen.apply(coverage)),
+                    );
                 }
             });
         }
@@ -554,26 +585,106 @@ pub fn draw_text_at_baseline(
     x - pen_x
 }
 
-/// Draw text centered horizontally and vertically at a point.
-pub fn draw_centered_text(
+/// Bounding box of the ink a string actually puts on the page, measured
+/// relative to a pen at x = 0 sitting on baseline y = 0.
+///
+/// This is not the same as the advance box. The advance box is as tall as the
+/// font's ascent and descent — space reserved for accents and descenders that a
+/// string like `-4` never uses — and as wide as the sum of the advances,
+/// including the side bearings that pad the first and last glyph. Centering on
+/// the advance box therefore centers the *slot*, not the *marks in it*, which
+/// is why the stat bubbles all sat low: digits have no descender, so reserving
+/// descender space below them pushed the visible glyphs down.
+///
+/// Returns `None` for a string that draws nothing (empty, or all whitespace).
+pub fn ink_bounds(text: &str, font: &FontRef, scale: PxScale) -> Option<(f32, f32, f32, f32)> {
+    let scaled = font.as_scaled(scale);
+    let mut x = 0.0f32;
+    let mut prev: Option<GlyphId> = None;
+    let mut bounds: Option<(f32, f32, f32, f32)> = None;
+
+    for c in text.chars() {
+        let gid = scaled.glyph_id(c);
+        if let Some(p) = prev {
+            x += scaled.kern(p, gid);
+        }
+        let glyph = Glyph {
+            id: gid,
+            scale,
+            position: point(x, 0.0),
+        };
+        if let Some(outlined) = font.outline_glyph(glyph) {
+            let b = outlined.px_bounds();
+            bounds = Some(match bounds {
+                None => (b.min.x, b.min.y, b.max.x, b.max.y),
+                Some((x0, y0, x1, y1)) => (
+                    x0.min(b.min.x),
+                    y0.min(b.min.y),
+                    x1.max(b.max.x),
+                    y1.max(b.max.y),
+                ),
+            });
+        }
+        x += scaled.h_advance(gid);
+        prev = Some(gid);
+    }
+
+    bounds
+}
+
+/// Draw text so that the ink it lays down is centered on `(cx, cy)`.
+///
+/// This is the right anchor for the hand and life modifiers: the target is a
+/// circle stamped on the template, and what has to sit in the middle of it is
+/// the visible `-4`, not the typographic slot around it. Every stat value is a
+/// sign followed by digits, all of the same cap height and none with a
+/// descender, so ink-centering is stable across values.
+///
+/// It is the wrong anchor for running text or for the card name — see
+/// [`draw_text_centered_on_baseline`].
+pub fn draw_text_centered_on_ink(
     canvas: &mut RgbaImage,
     text: &str,
     cx: u32,
     cy: u32,
     font: &FontRef,
     scale: PxScale,
-    color: [u8; 3],
+    pen: Pen,
+) {
+    match ink_bounds(text, font, scale) {
+        Some((x0, y0, x1, y1)) => {
+            let pen_x = cx as f32 - (x0 + x1) / 2.0;
+            let baseline_y = cy as f32 - (y0 + y1) / 2.0;
+            draw_text_at_baseline(canvas, text, pen_x, baseline_y, font, scale, pen);
+        }
+        None => draw_text_centered_on_baseline(canvas, text, cx, cy, font, scale, pen),
+    }
+}
+
+/// Draw text centered horizontally on `cx`, with its baseline placed so the
+/// font's ascent-plus-descent slot is centered on `cy`.
+///
+/// The vertical position depends only on the font and its size, never on which
+/// letters the string happens to contain. That is what a banner needs: every
+/// card name must sit on the same baseline, so `Volrath` cannot ride higher
+/// than `Sliver Queen, Brood Mother` merely because it has no descender.
+pub fn draw_text_centered_on_baseline(
+    canvas: &mut RgbaImage,
+    text: &str,
+    cx: u32,
+    cy: u32,
+    font: &FontRef,
+    scale: PxScale,
+    pen: Pen,
 ) {
     let scaled = font.as_scaled(scale);
-    let width = measure_str(text, font, scale);
     let ascent = scaled.ascent();
     let descent = -scaled.descent(); // make positive
-    let text_h = ascent + descent;
 
-    let pen_x = cx as f32 - width / 2.0;
-    let baseline_y = cy as f32 - text_h / 2.0 + ascent;
+    let pen_x = cx as f32 - measure_str(text, font, scale) / 2.0;
+    let baseline_y = cy as f32 - (ascent + descent) / 2.0 + ascent;
 
-    draw_text_at_baseline(canvas, text, pen_x, baseline_y, font, scale, color);
+    draw_text_at_baseline(canvas, text, pen_x, baseline_y, font, scale, pen);
 }
 
 // ── Rules text block rendering ────────────────────────────────────────────────
@@ -590,7 +701,7 @@ pub fn draw_rules_text(
     font: &FontRef,
     flavor_font: &FontRef,
     layout: &Layout,
-    color: [u8; 3],
+    pen: Pen,
 ) {
     let center_x = layout.text_box.center_x();
     let narrow_center_x = layout.narrow_text_box.center_x();
@@ -616,7 +727,8 @@ pub fn draw_rules_text(
         &fit.spec,
         center_x,
         layout.para_gap,
-        color,
+        layout.symbol_y_offset,
+        pen,
         &mut y,
     );
 
@@ -628,7 +740,8 @@ pub fn draw_rules_text(
         &fit.spec,
         narrow_center_x,
         layout.para_gap,
-        color,
+        layout.symbol_y_offset,
+        pen,
         &mut y,
     );
 
@@ -648,7 +761,8 @@ pub fn draw_rules_text(
             &flavor.spec,
             flavor_cx,
             layout.para_gap,
-            color,
+            layout.symbol_y_offset,
+            pen,
             &mut y,
         );
     }
@@ -662,7 +776,8 @@ fn draw_lines(
     spec: &TypeSpec,
     center_x: f32,
     para_gap: f32,
-    color: [u8; 3],
+    symbol_y_offset: f32,
+    pen: Pen,
     y: &mut f32,
 ) {
     let baseline_from_top = spec.baseline_from_top(font);
@@ -679,7 +794,7 @@ fn draw_lines(
                 let line_w = measure_tokens(tokens, font, spec.scale, spec.symbol_size);
                 let mut x = center_x - line_w / 2.0;
                 let baseline_y = *y + baseline_from_top;
-                let sym_center_y = *y + spec.line_height / 2.0;
+                let sym_center_y = *y + spec.line_height / 2.0 + symbol_y_offset;
 
                 for token in tokens {
                     // A known symbol renders as an image; anything else falls
@@ -699,7 +814,7 @@ fn draw_lines(
                         baseline_y,
                         font,
                         spec.scale,
-                        color,
+                        pen,
                     );
                 }
 

@@ -1,5 +1,5 @@
 name: "Volrath"
-ability: "Whenever any of your creatures is put into your graveyard from play, you may put that creature on top of your library."
+ability: "Whenever any of your creatures is put\ninto your graveyard from play, you may\nput that creature on top of your library."
 hand: "+2"
 life: "-3"
 artwork: "assets/artwork/volrath.png"

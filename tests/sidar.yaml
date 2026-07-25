@@ -1,5 +1,5 @@
 name: "Sidar Kondo"
-ability: "{3}: Target creature gets +3/+3 until end of turn."
+ability: "{3}: Target creature gets +3/+3\nuntil end of turn."
 hand: "-1"
 life: "+12"
 artwork: "assets/artwork/sidar.png"
