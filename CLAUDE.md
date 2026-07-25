@@ -11,7 +11,7 @@ Where customisation makes sense (e.g. swapping the card template for a fan-made 
 
 Whenever designing or modifying text insertion (placement, sizing, font, layout), you MUST use the text-pixel F1 score as the feedback metric. Raw pixel diff is useless here because the template background dominates the signal.
 
-The method (driven by `tests/common/mod.rs`, one test per row of `CASES`):
+The suite covers all 25 cards in `tests/assets/`, four elements each. The method (driven by `tests/common/mod.rs`, one test per card):
 1. For each text region (title, rules, left bubble, right bubble), render **only that element** onto a blank 718×1024 canvas using the exact same `render::draw_*` functions called by `render::render_card`.
 2. Scale the reference mask to 718×1024.
 3. Binarize both at luma < 128 (dark pixels = text).
@@ -31,7 +31,7 @@ Every case prints a diagnosis, not just a number: ink volume vs the reference, b
 
 ### Calibrating
 
-`tests/calibrate.rs` coordinate-descends the `Layout` constants against mean F1 and prints suggested values; `KNOB=<name> … explain_knob` breaks a single knob down per card, which is how you tell a real layout error from one card's scan being off-register. `tests/font_search.rs` scores candidate typefaces, re-fitting the size knob per face so a face is not rejected merely for having different metrics.
+`tests/calibrate.rs` coordinate-descends the `Layout` constants against mean F1 and prints suggested values; `KNOB=<name> … explain_knob` breaks a single knob down per card, which is how you tell a real layout error from one card's scan being off-register. **Always run `explain_knob` before accepting a suggestion.** The descent optimises a mean, so one card can carry it: `symbol_scale` was pushed to 1.40 by Hanna alone, buying a translation through the wrong knob, while the other three symbol cards all peaked near 0.95. `tests/font_search.rs` scores candidate typefaces, re-fitting the size knob per face so a face is not rejected merely for having different metrics.
 
 ### Where F1 must not be trusted
 

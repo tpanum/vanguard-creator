@@ -16,9 +16,10 @@
 
 use ab_glyph::FontRef;
 use image::{ImageBuffer, Luma, RgbaImage};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use vgc::{
     card::CardDef,
@@ -26,6 +27,8 @@ use vgc::{
     layout::{Layout, DEFAULT},
     render,
 };
+
+pub mod refmask;
 
 pub type BinMask = ImageBuffer<Luma<u8>, Vec<u8>>;
 
@@ -142,7 +145,7 @@ pub fn load_font_file(path: &std::path::Path) -> anyhow::Result<FontRef<'static>
 
 // ── The case table ────────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Element {
     Title,
     Rules,
@@ -206,161 +209,215 @@ impl Element {
 }
 
 pub struct Case {
+    /// Card slug: names `tests/cards/<slug>.yaml` and `tests/assets/<slug>.jpg`.
+    pub slug: &'static str,
     pub card: &'static str,
-    pub yaml: &'static str,
     pub element: Element,
-    /// Reference mask path.
-    pub mask: &'static str,
-    /// Fixture basename for `_rendered.png` / `_diff.png`.
-    pub fixture: &'static str,
-    /// Minimum acceptable F1.
-    pub threshold: f64,
+    /// Minimum acceptable F1. `None` means the case is scored and reported but
+    /// not gated — used for cards added to widen coverage before their
+    /// thresholds have been reviewed.
+    pub threshold: Option<f64>,
 }
 
 impl Case {
     pub fn label(&self) -> String {
         format!("{} {}", self.card, self.element.slug().replace('_', " "))
     }
+
+    pub fn yaml(&self) -> String {
+        format!("tests/cards/{}.yaml", self.slug)
+    }
+
+    /// The scan this case is scored against. Leaked so the mask cache can key
+    /// on a `&'static str` without a lookup table.
+    pub fn scan(&self) -> &'static str {
+        static PATHS: OnceLock<Mutex<HashMap<&'static str, &'static str>>> = OnceLock::new();
+        let paths = PATHS.get_or_init(|| Mutex::new(HashMap::new()));
+        let mut paths = paths.lock().unwrap();
+        paths.entry(self.slug).or_insert_with(|| {
+            Box::leak(format!("tests/assets/{}.jpg", self.slug).into_boxed_str())
+        })
+    }
+
+    pub fn fixture(&self) -> String {
+        format!("{}_{}", self.slug, self.element.slug())
+    }
+
+    pub fn reference(&self) -> &'static BinMask {
+        refmask::reference(self.scan(), self.element)
+    }
 }
 
-/// Every (card, element) pair the suite scores. Adding a card means adding
-/// rows here plus the mask fixtures — no new test functions to write.
-pub const CASES: &[Case] = &[
-    Case {
-        card: "Gerrard",
-        yaml: "tests/gerrard.yaml",
-        element: Element::Title,
-        mask: "tests/fixtures/gerrard_title_mask.png",
-        fixture: "gerrard_title",
-        threshold: 0.72,
+/// Every card in `tests/assets/`, with the F1 floor each element must clear.
+///
+/// Thresholds are per (card, element) because the cards are not equally hard:
+/// a two-word title on a clean scan scores far above a three-line ability with
+/// a mana symbol in it. `None` leaves a case reported but ungated.
+pub struct CardSpec {
+    pub slug: &'static str,
+    pub name: &'static str,
+    /// Floors for title, rules, left bubble, right bubble.
+    pub thresholds: [Option<f64>; 4],
+}
+
+pub const CARDS: &[CardSpec] = &[
+    CardSpec {
+        slug: "ashnod",
+        name: "Ashnod",
+        thresholds: [Some(0.59), Some(0.71), Some(0.71), Some(0.70)],
     },
-    Case {
-        card: "Gerrard",
-        yaml: "tests/gerrard.yaml",
-        element: Element::Rules,
-        mask: "tests/fixtures/gerrard_rules_ref.png",
-        fixture: "gerrard_rules",
-        threshold: 0.36,
+    CardSpec {
+        slug: "crovax",
+        name: "Crovax",
+        thresholds: [Some(0.72), Some(0.47), Some(0.56), Some(0.65)],
     },
-    Case {
-        card: "Gerrard",
-        yaml: "tests/gerrard.yaml",
-        element: Element::LeftBubble,
-        mask: "tests/fixtures/gerrard_left_bubble_ref.png",
-        fixture: "gerrard_left_bubble",
-        threshold: 0.45,
+    CardSpec {
+        slug: "eladamri",
+        name: "Eladamri",
+        thresholds: [Some(0.62), Some(0.38), Some(0.55), Some(0.44)],
     },
-    Case {
-        card: "Gerrard",
-        yaml: "tests/gerrard.yaml",
-        element: Element::RightBubble,
-        mask: "tests/fixtures/gerrard_right_bubble_ref.png",
-        fixture: "gerrard_right_bubble",
-        threshold: 0.60,
+    CardSpec {
+        slug: "ertai",
+        name: "Ertai",
+        thresholds: [Some(0.58), Some(0.43), Some(0.62), Some(0.58)],
     },
-    Case {
-        card: "Sliver Queen",
-        yaml: "tests/silverqueen.yaml",
-        element: Element::Title,
-        mask: "tests/fixtures/silverqueen_title_mask.png",
-        fixture: "silverqueen_title",
-        threshold: 0.57,
+    CardSpec {
+        slug: "gerrard",
+        name: "Gerrard",
+        thresholds: [Some(0.73), Some(0.38), Some(0.46), Some(0.48)],
     },
-    Case {
-        card: "Sliver Queen",
-        yaml: "tests/silverqueen.yaml",
-        element: Element::Rules,
-        mask: "tests/fixtures/silverqueen_rules_ref.png",
-        fixture: "silverqueen_rules",
-        threshold: 0.36,
+    CardSpec {
+        slug: "hanna",
+        name: "Hanna",
+        thresholds: [Some(0.76), Some(0.36), Some(0.65), Some(0.57)],
     },
-    Case {
-        card: "Sliver Queen",
-        yaml: "tests/silverqueen.yaml",
-        element: Element::LeftBubble,
-        mask: "tests/fixtures/silverqueen_left_bubble_ref.png",
-        fixture: "silverqueen_left_bubble",
-        threshold: 0.50,
+    CardSpec {
+        slug: "maraxus",
+        name: "Maraxus",
+        thresholds: [Some(0.75), Some(0.28), Some(0.57), Some(0.72)],
     },
-    Case {
-        card: "Sliver Queen",
-        yaml: "tests/silverqueen.yaml",
-        element: Element::RightBubble,
-        mask: "tests/fixtures/silverqueen_right_bubble_ref.png",
-        fixture: "silverqueen_right_bubble",
-        threshold: 0.38,
+    CardSpec {
+        slug: "mishra",
+        name: "Mishra",
+        thresholds: [Some(0.56), Some(0.42), Some(0.54), Some(0.48)],
     },
-    Case {
-        card: "Sidar Kondo",
-        yaml: "tests/sidar.yaml",
-        element: Element::Title,
-        mask: "tests/fixtures/sidar_title.png",
-        fixture: "sidar_title",
-        threshold: 0.50,
+    CardSpec {
+        slug: "multani",
+        name: "Multani",
+        thresholds: [Some(0.72), Some(0.46), Some(0.74), Some(0.53)],
     },
-    Case {
-        card: "Sidar Kondo",
-        yaml: "tests/sidar.yaml",
-        element: Element::Rules,
-        mask: "tests/fixtures/sidar_rules_ref.png",
-        fixture: "sidar_rules",
-        threshold: 0.42,
+    CardSpec {
+        slug: "oracle",
+        name: "Oracle",
+        thresholds: [Some(0.77), Some(0.38), Some(0.62), Some(0.47)],
     },
-    Case {
-        card: "Sidar Kondo",
-        yaml: "tests/sidar.yaml",
-        element: Element::LeftBubble,
-        mask: "tests/fixtures/sidar_left_bubble_ref.png",
-        fixture: "sidar_left_bubble",
-        threshold: 0.78,
+    CardSpec {
+        slug: "orim",
+        name: "Orim",
+        thresholds: [Some(0.56), Some(0.37), Some(0.50), Some(0.53)],
     },
-    Case {
-        card: "Sidar Kondo",
-        yaml: "tests/sidar.yaml",
-        element: Element::RightBubble,
-        mask: "tests/fixtures/sidar_right_bubble_ref.png",
-        fixture: "sidar_right_bubble",
-        threshold: 0.44,
+    CardSpec {
+        slug: "rofellos",
+        name: "Rofellos",
+        thresholds: [Some(0.68), Some(0.43), Some(0.25), Some(0.36)],
     },
-    Case {
-        card: "Volrath",
-        yaml: "tests/volrath.yaml",
-        element: Element::Title,
-        mask: "tests/fixtures/volrath_title_mask.png",
-        fixture: "volrath_title",
-        threshold: 0.67,
+    CardSpec {
+        slug: "selenia",
+        name: "Selenia",
+        thresholds: [Some(0.30), Some(0.27), Some(0.57), Some(0.58)],
     },
-    Case {
-        card: "Volrath",
-        yaml: "tests/volrath.yaml",
-        element: Element::Rules,
-        mask: "tests/fixtures/volrath_rules_ref.png",
-        fixture: "volrath_rules",
-        threshold: 0.29,
+    CardSpec {
+        slug: "serra",
+        name: "Serra",
+        thresholds: [Some(0.63), Some(0.40), Some(0.64), Some(0.54)],
     },
-    Case {
-        card: "Volrath",
-        yaml: "tests/volrath.yaml",
-        element: Element::LeftBubble,
-        mask: "tests/fixtures/volrath_left_bubble_ref.png",
-        fixture: "volrath_left_bubble",
-        threshold: 0.71,
+    CardSpec {
+        slug: "sidarkondo",
+        name: "Sidar Kondo",
+        thresholds: [Some(0.54), Some(0.36), Some(0.77), Some(0.54)],
     },
-    Case {
-        card: "Volrath",
-        yaml: "tests/volrath.yaml",
-        element: Element::RightBubble,
-        mask: "tests/fixtures/volrath_right_bubble_ref.png",
-        fixture: "volrath_right_bubble",
-        threshold: 0.76,
+    CardSpec {
+        slug: "silverqueen",
+        name: "Sliver Queen, Brood Mother",
+        thresholds: [Some(0.59), Some(0.38), Some(0.51), Some(0.47)],
+    },
+    CardSpec {
+        slug: "sisay",
+        name: "Sisay",
+        thresholds: [Some(0.55), Some(0.38), Some(0.71), Some(0.64)],
+    },
+    CardSpec {
+        slug: "starke",
+        name: "Starke",
+        thresholds: [Some(0.80), Some(0.43), Some(0.48), Some(0.53)],
+    },
+    CardSpec {
+        slug: "tahngarth",
+        name: "Tahngarth",
+        thresholds: [Some(0.58), Some(0.54), Some(0.62), Some(0.56)],
+    },
+    CardSpec {
+        slug: "takara",
+        name: "Takara",
+        thresholds: [Some(0.70), Some(0.41), Some(0.53), Some(0.70)],
+    },
+    CardSpec {
+        slug: "tawnos",
+        name: "Tawnos",
+        thresholds: [Some(0.72), Some(0.55), Some(0.64), Some(0.78)],
+    },
+    CardSpec {
+        slug: "titania",
+        name: "Titania",
+        thresholds: [Some(0.46), Some(0.43), Some(0.65), Some(0.64)],
+    },
+    CardSpec {
+        slug: "urza",
+        name: "Urza",
+        thresholds: [Some(0.77), Some(0.47), Some(0.76), Some(0.42)],
+    },
+    CardSpec {
+        slug: "volrath",
+        name: "Volrath",
+        thresholds: [Some(0.68), Some(0.41), Some(0.71), Some(0.56)],
+    },
+    CardSpec {
+        slug: "xantcha",
+        name: "Xantcha",
+        thresholds: [Some(0.60), Some(0.58), Some(0.76), Some(0.61)],
     },
 ];
 
-pub fn case(card: &str, element: Element) -> &'static Case {
-    CASES
+pub fn cases() -> &'static [Case] {
+    static CASES: OnceLock<Vec<Case>> = OnceLock::new();
+    CASES.get_or_init(|| {
+        CARDS
+            .iter()
+            .flat_map(|c| {
+                [
+                    Element::Title,
+                    Element::Rules,
+                    Element::LeftBubble,
+                    Element::RightBubble,
+                ]
+                .into_iter()
+                .enumerate()
+                .map(move |(i, element)| Case {
+                    slug: c.slug,
+                    card: c.name,
+                    element,
+                    threshold: c.thresholds[i],
+                })
+            })
+            .collect()
+    })
+}
+
+pub fn case(slug: &str, element: Element) -> &'static Case {
+    cases()
         .iter()
-        .find(|c| c.card == card && c.element == element)
-        .unwrap_or_else(|| panic!("no case for {card}/{element:?}"))
+        .find(|c| c.slug == slug && c.element == element)
+        .unwrap_or_else(|| panic!("no case for {slug}/{element:?}"))
 }
 
 // ── Binarization ──────────────────────────────────────────────────────────────
@@ -381,69 +438,6 @@ pub fn to_binary(img: &RgbaImage, threshold: u8, text_is_dark: bool) -> BinMask 
         };
         Luma([if is_text { 0 } else { 255 }])
     })
-}
-
-/// Load a ground-truth mask, scale it to match `target` dimensions, and binarize.
-/// Polarity is auto-detected from the mean luma of the mask.
-pub fn load_mask(mask_path: &str, target: &RgbaImage) -> BinMask {
-    use image::imageops;
-
-    let mask = image::open(mask_path).expect("load mask").into_rgba8();
-    let scaled = imageops::resize(
-        &mask,
-        target.width(),
-        target.height(),
-        imageops::FilterType::Lanczos3,
-    );
-
-    let lumas: Vec<u8> = scaled
-        .pixels()
-        .map(|p| {
-            let a = p[3] as f32 / 255.0;
-            let r = p[0] as f32 * a + 255.0 * (1.0 - a);
-            let g = p[1] as f32 * a + 255.0 * (1.0 - a);
-            let b = p[2] as f32 * a + 255.0 * (1.0 - a);
-            (r * 0.299 + g * 0.587 + b * 0.114) as u8
-        })
-        .collect();
-    let mean_luma: f64 = lumas.iter().map(|&l| l as f64).sum::<f64>() / lumas.len() as f64;
-    let text_is_dark = mean_luma > 128.0;
-
-    let threshold = if text_is_dark { 128u8 } else { otsu(&lumas) };
-
-    to_binary(&scaled, threshold, text_is_dark)
-}
-
-fn otsu(lumas: &[u8]) -> u8 {
-    let n = lumas.len() as f64;
-    let mut hist = [0u64; 256];
-    for &l in lumas {
-        hist[l as usize] += 1;
-    }
-    let total_mean: f64 = hist
-        .iter()
-        .enumerate()
-        .map(|(i, &c)| i as f64 * c as f64)
-        .sum::<f64>()
-        / n;
-    let (mut best_t, mut best_var) = (0usize, 0.0f64);
-    let (mut w0, mut sum0) = (0.0f64, 0.0f64);
-    for (t, &count) in hist.iter().enumerate() {
-        w0 += count as f64 / n;
-        sum0 += t as f64 * count as f64 / n;
-        let w1 = 1.0 - w0;
-        if w0 == 0.0 || w1 == 0.0 {
-            continue;
-        }
-        let mean0 = sum0 / w0;
-        let mean1 = (total_mean - sum0) / w1;
-        let var = w0 * w1 * (mean0 - mean1).powi(2);
-        if var > best_var {
-            best_var = var;
-            best_t = t;
-        }
-    }
-    best_t as u8
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
@@ -998,30 +992,32 @@ pub fn save_diff(got: &BinMask, reference: &BinMask, path: &str) {
 
 /// Score one case, printing a full diagnosis, and assert its threshold.
 pub fn run_case(case: &Case) {
-    let rendered = case.element.render(case.yaml);
+    let rendered = case.element.render(&case.yaml());
     let got_mask = to_binary(&rendered, 128, true);
-    let ref_mask = load_mask(case.mask, &rendered);
+    let ref_mask = case.reference();
 
-    let diag = Diagnosis::new(&got_mask, &ref_mask);
+    let diag = Diagnosis::new(&got_mask, ref_mask);
     print!("{}", diag.report(case));
 
     if std::env::var("UPDATE_FIXTURES").is_ok() {
         rendered
-            .save(format!("tests/fixtures/{}_rendered.png", case.fixture))
+            .save(format!("tests/fixtures/{}_rendered.png", case.fixture()))
             .unwrap();
         save_diff(
             &got_mask,
-            &ref_mask,
-            &format!("tests/fixtures/{}_diff.png", case.fixture),
+            ref_mask,
+            &format!("tests/fixtures/{}_diff.png", case.fixture()),
         );
     }
 
-    assert!(
-        diag.raw.f1 >= case.threshold,
-        "{} text F1 is {:.1}% — below threshold {:.1}%\n{}",
-        case.label(),
-        diag.raw.f1 * 100.0,
-        case.threshold * 100.0,
-        diag.report(case),
-    );
+    if let Some(threshold) = case.threshold {
+        assert!(
+            diag.raw.f1 >= threshold,
+            "{} text F1 is {:.1}% — below threshold {:.1}%\n{}",
+            case.label(),
+            diag.raw.f1 * 100.0,
+            threshold * 100.0,
+            diag.report(case),
+        );
+    }
 }

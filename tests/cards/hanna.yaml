@@ -1,0 +1,5 @@
+name: "Hanna"
+ability: "Your spells cost {1} less to play."
+hand: "+1"
+life: "-5"
+artwork: "../assets/artwork/hanna.png"

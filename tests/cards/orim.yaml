@@ -1,0 +1,5 @@
+name: "Orim"
+ability: "Your creatures can block\nas though they had flying."
+hand: "+0"
+life: "+12"
+artwork: "../assets/artwork/orim.png"

@@ -1,0 +1,5 @@
+name: "Gerrard"
+ability: "During your draw phase,\ndraw an additional card."
+hand: "-4"
+life: "+0"
+artwork: "../assets/artwork/gerrard.png"

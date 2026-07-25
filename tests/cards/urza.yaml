@@ -1,0 +1,5 @@
+name: "Urza"
+ability: "{3}: Urza deals 1 damage to\ntarget creature or player."
+hand: "-1"
+life: "+10"
+artwork: "../assets/artwork/urza.png"

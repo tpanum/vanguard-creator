@@ -1,0 +1,5 @@
+name: "Maraxus"
+ability: "Your creatures get +1/+0."
+hand: "+1"
+life: "+2"
+artwork: "../assets/artwork/maraxus.png"

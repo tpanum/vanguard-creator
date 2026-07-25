@@ -1,0 +1,5 @@
+name: "Rofellos"
+ability: "Whenever a creature you control is put into\na graveyard from play, draw a card."
+hand: "-2"
+life: "+4"
+artwork: "../assets/artwork/rofellos.png"

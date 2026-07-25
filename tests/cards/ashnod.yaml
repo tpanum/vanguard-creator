@@ -1,0 +1,5 @@
+name: "Ashnod"
+ability: "Whenever a creature successfully\ndamages you, destroy it."
+hand: "+1"
+life: "-8"
+artwork: "../assets/artwork/ashnod.png"

@@ -1,0 +1,5 @@
+name: "Selenia"
+ability: "Attacking doesn’t cause\nyour creatures to tap."
+hand: "+1"
+life: "+7"
+artwork: "../assets/artwork/selenia.png"

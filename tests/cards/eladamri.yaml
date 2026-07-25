@@ -1,0 +1,5 @@
+name: "Eladamri"
+ability: "You may redirect to yourself any amount\nof damage dealt to creatures you control."
+hand: "-1"
+life: "+15"
+artwork: "../assets/artwork/eladamri.png"

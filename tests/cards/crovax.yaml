@@ -1,0 +1,5 @@
+name: "Crovax"
+ability: "Whenever any of your creatures damages\nany creature or player, gain 1 life."
+hand: "+2"
+life: "+0"
+artwork: "../assets/artwork/crovax.png"

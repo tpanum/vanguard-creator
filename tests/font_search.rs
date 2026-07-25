@@ -20,11 +20,9 @@
 mod common;
 
 use ab_glyph::FontRef;
-use image::RgbaImage;
-use std::collections::HashMap;
 use vgc::layout::{Layout, DEFAULT};
 
-use common::{load_mask, text_f1, to_binary, BinMask, Case, Ctx, Element, CASES};
+use common::{cases, text_f1, to_binary, Case, Ctx, Element};
 
 struct Candidate {
     name: String,
@@ -71,29 +69,23 @@ fn candidates() -> Vec<Candidate> {
     out
 }
 
-struct Refs {
-    masks: HashMap<&'static str, BinMask>,
-}
+/// Masks are cached inside `common::refmask`, so this exists only to give the
+/// scoring helpers a home.
+struct Refs;
 
 impl Refs {
     fn load() -> Refs {
-        let probe: RgbaImage = common::blank_canvas();
-        Refs {
-            masks: CASES
-                .iter()
-                .map(|c| (c.mask, load_mask(c.mask, &probe)))
-                .collect(),
-        }
+        Refs
     }
 
     fn f1(&self, case: &Case, ctx: &Ctx) -> f64 {
-        let rendered = case.element.render_with(case.yaml, ctx);
+        let rendered = case.element.render_with(&case.yaml(), ctx);
         let got = to_binary(&rendered, 128, true);
-        text_f1(&got, &self.masks[case.mask]).2
+        text_f1(&got, case.reference()).2
     }
 
     fn mean(&self, ctx: &Ctx, elements: &[Element]) -> f64 {
-        let v: Vec<f64> = CASES
+        let v: Vec<f64> = cases()
             .iter()
             .filter(|c| elements.contains(&c.element))
             .map(|c| self.f1(c, ctx))

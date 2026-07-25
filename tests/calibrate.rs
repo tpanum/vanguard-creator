@@ -20,30 +20,21 @@
 
 mod common;
 
-use image::RgbaImage;
-use std::collections::HashMap;
 use vgc::layout::{Layout, DEFAULT};
 
-use common::{load_mask, text_f1, to_binary, BinMask, Case, Ctx, Element, CASES};
+use common::{cases, text_f1, to_binary, Case, Ctx, Element};
 
 // ── Objective ─────────────────────────────────────────────────────────────────
 
 /// Reference masks are expensive to load (a Lanczos resize of a ~1000×1500
 /// scan), and the search re-scores them thousands of times. Load once.
 struct Refs {
-    masks: HashMap<&'static str, BinMask>,
     ctx: Ctx,
 }
 
 impl Refs {
     fn load() -> Refs {
-        let probe: RgbaImage = common::blank_canvas();
-        let masks = CASES
-            .iter()
-            .map(|c| (c.mask, load_mask(c.mask, &probe)))
-            .collect();
         Refs {
-            masks,
             ctx: Ctx::production(),
         }
     }
@@ -54,14 +45,14 @@ impl Refs {
             name_font: self.ctx.name_font.clone(),
             body_font: self.ctx.body_font.clone(),
         };
-        let rendered = case.element.render_with(case.yaml, &ctx);
+        let rendered = case.element.render_with(&case.yaml(), &ctx);
         let got = to_binary(&rendered, 128, true);
-        text_f1(&got, &self.masks[case.mask]).2
+        text_f1(&got, case.reference()).2
     }
 
     /// Mean F1 over the cases whose element is in `elements`.
     fn mean_f1(&self, layout: &Layout, elements: &[Element]) -> f64 {
-        let scored: Vec<f64> = CASES
+        let scored: Vec<f64> = cases()
             .iter()
             .filter(|c| elements.contains(&c.element))
             .map(|c| self.f1(c, layout))
@@ -294,7 +285,7 @@ fn calibrate_layout() {
 
     println!(
         "\nstarting mean F1 over all {} cases: {:.2}%",
-        CASES.len(),
+        cases().len(),
         start * 100.0
     );
     println!("{}", "─".repeat(72));
@@ -337,7 +328,7 @@ fn calibrate_layout() {
     println!("{}", "─".repeat(72));
     println!(
         "final mean F1 over all {} cases: {:.2}%  ({:+.2} points)",
-        CASES.len(),
+        cases().len(),
         end * 100.0,
         (end - start) * 100.0
     );
@@ -385,21 +376,21 @@ fn tune_ink_gain() {
         layout.ink_gain = gain as f32;
 
         let (mut f1_sum, mut ratio_sum) = (0.0, 0.0);
-        for c in CASES {
+        for c in cases() {
             let ctx = Ctx {
                 layout: layout.clone(),
                 name_font: refs.ctx.name_font.clone(),
                 body_font: refs.ctx.body_font.clone(),
             };
-            let rendered = c.element.render_with(c.yaml, &ctx);
+            let rendered = c.element.render_with(&c.yaml(), &ctx);
             let got = to_binary(&rendered, 128, true);
-            let reference = &refs.masks[c.mask];
+            let reference = c.reference();
             f1_sum += text_f1(&got, reference).2;
             let ink_got = got.pixels().filter(|p| p[0] == 0).count() as f64;
             let ink_ref = reference.pixels().filter(|p| p[0] == 0).count() as f64;
             ratio_sum += ink_got / ink_ref;
         }
-        let n = CASES.len() as f64;
+        let n = cases().len() as f64;
         let ratio = ratio_sum / n;
         println!(
             "{:>9.2}{:>11.2}%{:>13.3}   {}",
@@ -443,13 +434,13 @@ fn explain_knob() {
     let base = (knob.get)(&DEFAULT);
     let steps = (knob.span / knob.step).round() as i32;
 
-    let cases: Vec<&Case> = CASES
+    let selected: Vec<&Case> = cases()
         .iter()
         .filter(|c| knob.elements.contains(&c.element))
         .collect();
 
     print!("\n{:>10}", knob.name);
-    for c in &cases {
+    for c in &selected {
         print!(" {:>14}", c.card);
     }
     println!(" {:>8}", "mean");
@@ -460,12 +451,12 @@ fn explain_knob() {
         (knob.set)(&mut l, v);
         print!("{:>10.3}", v);
         let mut sum = 0.0;
-        for c in &cases {
+        for c in &selected {
             let f1 = refs.f1(c, &l);
             sum += f1;
             print!(" {:>13.1}%", f1 * 100.0);
         }
-        let mean = sum / cases.len() as f64;
+        let mean = sum / selected.len() as f64;
         println!(
             " {:>7.1}%{}",
             mean * 100.0,
