@@ -13,17 +13,17 @@ Whenever designing or modifying text insertion (placement, sizing, font, layout)
 
 The suite covers all 25 cards in `tests/assets/`, four elements each. The method (driven by `tests/common/mod.rs`, one test per card):
 1. For each text region (title, rules, left bubble, right bubble), render **only that element** onto a blank 718×1024 canvas using the exact same `render::draw_*` functions called by `render::render_card`.
-2. Scale the reference mask to 718×1024.
-3. Binarize both at luma < 128 (dark pixels = text).
+2. Segment the same region out of the card scan, in the same 718×1024 space.
+3. Binarize the render at luma < 128 (dark pixels = text).
 4. Compute precision, recall, and F1 over the binary text-pixel masks.
 
 ### Reference masks
 
-Rules text and stat bubbles are scored against `tests/fixtures/*_ref.png`, segmented straight from the card scans in `tests/assets/` by `tests/build_masks.rs`. Titles are gold-on-dark and do not segment cleanly, so they keep their hand-traced `*_title_mask.png`.
+No mask is stored on disk. `tests/common/refmask.rs` segments all four regions out of the card scan at test time — local-background threshold at native resolution, frame and speckle components dropped, area-correct downsample to 718×1024 — and memoises the result. A mask is therefore a pure function of two version-controlled inputs: the scan and that file.
 
-Do not go back to hand-traced masks for the scan-derived regions. The hand masks they replaced carried ~20% more ink than the scans they came from and contained no mana symbols at all, which biased every measurement toward type that was too heavy and scored a correctly drawn `{3}` as a block of false positives.
+Do not go back to hand-traced masks. The ones this replaced carried ~20% more ink than the scans they came from and contained no mana symbols at all, which biased every measurement toward type that was too heavy and scored a correctly drawn `{3}` as a block of false positives.
 
-Regenerate with `cargo test --release --test build_masks -- --ignored --nocapture`, and always eyeball `preview_reference_masks` output before trusting a score built on a regenerated mask.
+Adding a card costs a scan at `tests/assets/<slug>.jpg`, a definition at `tests/cards/<slug>.yaml`, and a row in `CARDS` — no fixtures. After changing anything in `refmask.rs`, run `cargo test --release --test build_masks -- --ignored --nocapture` and look at the overlays before trusting any score built on the result.
 
 ### Reading a failure
 
