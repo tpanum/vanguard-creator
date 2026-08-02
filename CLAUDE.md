@@ -219,18 +219,11 @@ The accuracy suite does not see any of it: it scores text on a blank canvas with
 
 ## Scryfall API
 
-Vanguard card metadata can be looked up via the Scryfall search API:
-
-```
-https://api.scryfall.com/cards/search?q=t%3Avanguard+name%3A<name>
-```
-
-The API reliably provides:
-- `hand_modifier` — the hand size modifier shown in the left bubble (e.g. `"-4"`)
-- `life_modifier` — the life total modifier shown in the right bubble (e.g. `"+0"`)
-- `flavor_text` — lore text on the card
+Vanguard metadata — `hand_modifier`, `life_modifier`, `flavor_text` — can be looked up card by card at `https://api.scryfall.com`. It is an authoring aid only; `vgc` makes no network calls.
 
 **Do NOT use `oracle_text` for the rules text.** Scryfall only stores modernized oracle text (e.g. "from the battlefield" instead of the original "from play"), which differs from what is printed on the physical cards and shown in the reference masks. Rules text must be sourced from card scans or other references to the original printed wording.
+
+See **[docs/scryfall.md](docs/scryfall.md)** for the queries, the fields worth trusting, and one-liners for pulling a card's image or opening it in a browser.
 
 ## Which face goes where
 
