@@ -312,6 +312,12 @@ modifiers this tool draws in the bubbles — a signed number or a zero, printed 
 the lower left and lower right corners. Reach for it when a card's wording or a
 stat value looks wrong; it says nothing about typography or layout.
 
+It is also not a style guide. It defines what a phrase *means* — CR 115.4 says
+what `any target` covers — but never says to write that instead of `creature or
+player`. Templating lives in the Magic Style Guide, which Wizards does not
+publish, so for card wording use **[COMMON_RULE_CHECKLIST.md](COMMON_RULE_CHECKLIST.md)**:
+the mistakes that actually show up in custom cards, with the fix for each.
+
 ## Which face goes where
 
 - **Card name** — Fremont Regular.
