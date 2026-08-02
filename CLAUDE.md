@@ -318,10 +318,16 @@ decisions are load-bearing:
   `wrap_text_split` re-wraps its own reconstructed output.
 - **A modal block is set flush left as a unit, and the unit is centered.**
   Ordinary Vanguard rules text centers every line individually; doing that to a
-  list leaves the bullets in a ragged column. Whether a block is modal is decided
-  **once, for the whole block**, and passed into `draw_lines` — deciding it per
-  half meant an intro line long enough to wrap across the wide/narrow boundary
-  was centered above modes that were flush left, which read as two paragraphs.
+  list leaves the bullets in a ragged column. The unit is **the paragraph**: a
+  modal run is an intro line plus the modes under it, which is always one
+  paragraph, since a blank line starts a new one. `Line` carries a `modal` flag
+  set during wrapping, and `draw_lines` consults it per line.
+
+  Both wider scopes have been tried and are wrong. Per *half* left an intro line
+  that wrapped across the wide/narrow boundary centered above modes that were
+  flush left, reading as two paragraphs. Per *card* dragged unrelated paragraphs
+  into the list — Bushgeh's activated ability hung under the bullets instead of
+  centering, as did Wazim's and Vaw's opening lines.
 - **A modal block that spills into the narrow column is wrapped to the narrow
   measure throughout**, intro included. The block is one list against one left
   edge, and that edge is clamped to clear the stat-bubble housings — so measuring
