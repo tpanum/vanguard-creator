@@ -299,8 +299,17 @@ pub fn wrap_text_split(
     }
 
     let wide_lines: Vec<WrappedLine> = all[..split_at].to_vec();
-    let overflow_text = lines_to_text(&all[split_at..]);
-    let narrow_lines = if overflow_text.trim().is_empty() {
+    let rest = &all[split_at..];
+
+    // A paragraph break sitting exactly on the split boundary belongs to the
+    // narrow block: re-wrapping the remainder as text would trim the leading
+    // blank line away and silently run the two paragraphs together.
+    let boundary_break = rest
+        .first()
+        .is_some_and(|l| matches!(l, WrappedLine::ParagraphBreak));
+
+    let overflow_text = lines_to_text(rest);
+    let mut narrow_lines = if overflow_text.trim().is_empty() {
         Vec::new()
     } else {
         wrap_text(
@@ -311,6 +320,9 @@ pub fn wrap_text_split(
             symbol_size,
         )
     };
+    if boundary_break && !narrow_lines.is_empty() {
+        narrow_lines.insert(0, WrappedLine::ParagraphBreak);
+    }
 
     (wide_lines, narrow_lines)
 }
@@ -338,6 +350,9 @@ pub struct RulesFit {
     /// Ability lines 4+, wrapped at the narrower width (empty when ≤ 3 lines).
     pub narrow_lines: Vec<WrappedLine>,
     pub flavor: Option<FlavorFit>,
+    /// The text did not fit the normal box at full size, so it is set in the
+    /// extended parchment region and centered there instead.
+    pub overflow: bool,
 }
 
 fn block_height(lines: &[WrappedLine], line_height: f32, para_gap: f32) -> f32 {
@@ -376,12 +391,10 @@ pub fn fit_rules_text(
     flavor_font: &FontRef,
     layout: &Layout,
 ) -> RulesFit {
-    let size = layout.ability_size;
-    let spec = TypeSpec::ability(size, layout);
-
-    // Try normal margins first; if a 4th line is needed, retry with expanded
-    // margins before accepting the narrow split.
-    let (lines, narrow_lines) = {
+    // Wrap the ability at one size. Normal margins first; if a 4th line is
+    // needed, expanded margins are tried before accepting the narrow split.
+    let wrap_at = |size: u32| {
+        let spec = TypeSpec::ability(size, layout);
         let (wide, narrow) = wrap_text_split(
             ability,
             font,
@@ -391,7 +404,7 @@ pub fn fit_rules_text(
             WIDE_LINE_LIMIT,
             spec.symbol_size,
         );
-        if narrow.is_empty() {
+        let (wide, narrow) = if narrow.is_empty() {
             (wide, narrow)
         } else {
             wrap_text_split(
@@ -403,32 +416,51 @@ pub fn fit_rules_text(
                 WIDE_LINE_LIMIT,
                 spec.symbol_size,
             )
-        }
+        };
+        let height = block_height(&wide, spec.line_height, layout.para_gap)
+            + block_height(&narrow, spec.line_height, layout.para_gap);
+        (spec, wide, narrow, height)
     };
 
-    let total_lines = count_tokens(&lines) + count_tokens(&narrow_lines);
-    if total_lines > layout.max_ability_lines {
+    // Full size, normal box. Every original lands here and is untouched by
+    // everything below.
+    let full = wrap_at(layout.ability_size);
+    let overflow = full.3 > layout.pushup_free_height();
+
+    // Overflowing text gets the lower strip of parchment and, if that is still
+    // not enough, the largest size that fits it.
+    let (spec, lines, narrow_lines, ability_h) = if overflow {
+        let budget = layout.overflow_height();
+        (layout.ability_size_min..=layout.ability_size)
+            .rev()
+            .map(wrap_at)
+            .find(|(_, _, _, h)| *h <= budget)
+            .unwrap_or_else(|| wrap_at(layout.ability_size_min))
+    } else {
+        full
+    };
+
+    let size = spec.scale.x as u32;
+    if ability_h > layout.overflow_height() {
         eprintln!(
-            "warning: ability text wraps to {total_lines} lines at size {size} — \
-             exceeds the {}-line limit",
-            layout.max_ability_lines
+            "warning: ability text block ({ability_h:.0}px) does not fit the parchment \
+             ({:.0}px) even at the minimum size {size} — it will run past the bottom banner",
+            layout.overflow_height()
         );
     }
-
-    let ability_h = block_height(&lines, spec.line_height, layout.para_gap)
-        + block_height(&narrow_lines, spec.line_height, layout.para_gap);
-    if ability_h > layout.pushup_free_height() {
-        eprintln!(
-            "warning: ability text block ({ability_h:.0}px) exceeds push-up-free height \
-             ({:.0}px) — text would rise above the y_start floor",
-            layout.pushup_free_height()
-        );
+    let total_lines = count_tokens(&lines) + count_tokens(&narrow_lines);
+    if total_lines > layout.max_ability_lines {
+        eprintln!("note: ability text wraps to {total_lines} lines at size {size}");
     }
 
     // Flavor text auto-scales to fill the remaining vertical space.
     let flavor = flavor.map(|flav| {
-        let remaining =
-            layout.text_box.height() - ability_h - layout.para_gap - SEPARATOR_H - layout.para_gap;
+        let box_h = if overflow {
+            layout.overflow_height()
+        } else {
+            layout.text_box.height()
+        };
+        let remaining = box_h - ability_h - layout.para_gap - SEPARATOR_H - layout.para_gap;
 
         // Flavor text sits at the bottom of the box, where the stat-bubble
         // housings cut into it from both sides, so it wraps to the narrow width
@@ -457,6 +489,7 @@ pub fn fit_rules_text(
         lines,
         narrow_lines,
         flavor,
+        overflow,
     }
 }
 
@@ -742,6 +775,39 @@ pub fn draw_text_centered_on_baseline(
 /// any) are drawn centered in `layout.narrow_text_box` to stay clear of the
 /// stat-bubble frames. Flavor text follows after the separator using the same
 /// centering as the last ability line.
+/// Blank space between the ability block's line boxes and the ink inside them:
+/// leading above the first line's tallest glyph, and descent below the last
+/// line's lowest. Subtracting these is what makes a margin measured from the
+/// parchment edge agree with what the eye sees.
+fn ink_padding(fit: &RulesFit, font: &FontRef) -> (f32, f32) {
+    let text_of = |line: &WrappedLine| match line {
+        WrappedLine::Tokens(tokens) => {
+            Some(tokens.iter().map(|t| t.to_text_repr()).collect::<String>())
+        }
+        _ => None,
+    };
+    let visible = || {
+        fit.lines
+            .iter()
+            .chain(fit.narrow_lines.iter())
+            .filter_map(text_of)
+    };
+
+    let baseline = fit.spec.baseline_from_top(font);
+    let run = Run::new(fit.spec.scale);
+    let bounds = |text: Option<String>| text.and_then(|t| ink_bounds(&t, font, run));
+
+    // A line of symbols only has no outlined glyphs; fall back to no padding.
+    let pad_top = bounds(visible().next())
+        .map(|(_, y0, _, _)| (baseline + y0).max(0.0))
+        .unwrap_or(0.0);
+    let pad_bottom = bounds(visible().next_back())
+        .map(|(_, _, _, y1)| (fit.spec.line_height - (baseline + y1)).max(0.0))
+        .unwrap_or(0.0);
+
+    (pad_top, pad_bottom)
+}
+
 pub fn draw_rules_text(
     canvas: &mut RgbaImage,
     fit: &RulesFit,
@@ -759,12 +825,22 @@ pub fn draw_rules_text(
     // Short blocks: center within the calibrated centering region.
     // Tall blocks that exceed that region: center within the full text box.
     // y_start is floored at rules_min_y so long blocks never drift above it.
-    let offset = if ability_h <= layout.rules_centering_height {
-        (layout.rules_centering_height - ability_h) / 2.0
+    let mut y = if fit.overflow {
+        // Overflow text is placed in the parchment it actually occupies, which
+        // reaches below text_box.bottom, and is balanced on its ink rather than
+        // on its line boxes — see `rules_overflow_top_share`.
+        let (pad_top, pad_bottom) = ink_padding(fit, font);
+        let ink_h = (ability_h - pad_top - pad_bottom).max(0.0);
+        let free = (layout.overflow_height() - ink_h).max(0.0);
+        layout.rules_overflow_top + free * layout.rules_overflow_top_share - pad_top
     } else {
-        ((layout.text_box.height() - ability_h) / 2.0).max(0.0)
+        let offset = if ability_h <= layout.rules_centering_height {
+            (layout.rules_centering_height - ability_h) / 2.0
+        } else {
+            ((layout.text_box.height() - ability_h) / 2.0).max(0.0)
+        };
+        (layout.text_box.top as f32 + offset).max(layout.rules_min_y)
     };
-    let mut y = (layout.text_box.top as f32 + offset).max(layout.rules_min_y);
 
     // Ability lines 1-3 (full-width centering)
     draw_lines(
@@ -868,5 +944,113 @@ fn draw_lines(
                 *y += spec.line_height;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fonts::Fonts;
+    use crate::layout;
+
+    /// Longest ability text in the reference set (Sliver Queen), and the
+    /// longest found across 168 custom cards (Ricardi Van Mouse, ~3× the
+    /// median). One must be untouched by the overflow path; the other is the
+    /// reason it exists.
+    const ORIGINAL: &str = "All Slivers get +1/+1 for each other Sliver in play.\n\
+                            Sliver tokens you control are 2/2 instead of 1/1.";
+    const CUSTOM: &str = "Whenever land enters the battlefield, if a land has already \
+        entered the battlefield this turn, that land loses hexproof and becomes a 0/1 \
+        green Plant creature with haste. It's still a land.\n\n\
+        {1}{G}: You may discard a green card from your hand, if you do, search your \
+        library for land card and put it into play tapped. Activate only a sorcery and \
+        only once each turn.";
+
+    fn fit(ability: &str) -> RulesFit {
+        let fonts = Fonts::load().unwrap();
+        fit_rules_text(ability, None, &fonts.body, &fonts.body, &layout::DEFAULT)
+    }
+
+    #[test]
+    fn text_that_fits_never_enters_the_overflow_path() {
+        let fit = fit(ORIGINAL);
+        assert!(!fit.overflow);
+        assert_eq!(fit.spec.scale.x as u32, layout::DEFAULT.ability_size);
+    }
+
+    #[test]
+    fn overlong_text_shrinks_only_as_far_as_it_must() {
+        let fit = fit(CUSTOM);
+        assert!(fit.overflow, "366 chars does not fit at full size");
+        let size = fit.spec.scale.x as u32;
+        assert!(
+            (layout::DEFAULT.ability_size_min..layout::DEFAULT.ability_size).contains(&size),
+            "shrank to {size}"
+        );
+
+        // One size larger must genuinely not fit, or the search stopped early.
+        let l = &layout::DEFAULT;
+        let fonts = Fonts::load().unwrap();
+        let bigger = TypeSpec::ability(size + 1, l);
+        let (wide, narrow) = wrap_text_split(
+            CUSTOM,
+            &fonts.body,
+            bigger.scale,
+            l.rules_width_expanded(),
+            l.rules_width_narrow(),
+            WIDE_LINE_LIMIT,
+            bigger.symbol_size,
+        );
+        let h = block_height(&wide, bigger.line_height, l.para_gap)
+            + block_height(&narrow, bigger.line_height, l.para_gap);
+        assert!(h > l.overflow_height(), "size {} would have fit", size + 1);
+    }
+
+    #[test]
+    fn overflow_text_fits_the_parchment() {
+        let fit = fit(CUSTOM);
+        let fonts = Fonts::load().unwrap();
+        let l = &layout::DEFAULT;
+        let h = block_height(&fit.lines, fit.spec.line_height, l.para_gap)
+            + block_height(&fit.narrow_lines, fit.spec.line_height, l.para_gap);
+        assert!(h <= l.overflow_height(), "block {h} exceeds parchment");
+
+        // And its ink is balanced within it, rather than its line boxes.
+        let (pad_top, pad_bottom) = ink_padding(&fit, &fonts.body);
+        assert!(pad_top > 0.0 && pad_bottom > 0.0);
+        let ink_h = h - pad_top - pad_bottom;
+        let free = l.overflow_height() - ink_h;
+        let top = free * l.rules_overflow_top_share;
+        assert!(
+            (top - (free - top)).abs() <= 1.0,
+            "ink margins {top} / {} are not balanced",
+            free - top
+        );
+    }
+
+    #[test]
+    fn a_paragraph_break_on_the_split_boundary_survives() {
+        let fonts = Fonts::load().unwrap();
+        let l = &layout::DEFAULT;
+        let spec = TypeSpec::ability(l.ability_size, l);
+
+        // Three full lines, then a paragraph break: the break lands exactly on
+        // the wide/narrow boundary, where re-wrapping the remainder as text
+        // used to trim it away and run the paragraphs together.
+        let text = "Whenever land enters the battlefield, if a land has already entered \
+                    the battlefield this turn, that land loses hexproof.\n\n\
+                    Activate only as a sorcery.";
+        let (wide, narrow) = wrap_text_split(
+            text,
+            &fonts.body,
+            spec.scale,
+            l.rules_width(),
+            l.rules_width_narrow(),
+            WIDE_LINE_LIMIT,
+            spec.symbol_size,
+        );
+        assert_eq!(count_tokens(&wide), WIDE_LINE_LIMIT);
+        assert!(matches!(narrow.first(), Some(WrappedLine::ParagraphBreak)));
+        assert!(count_tokens(&narrow) > 0);
     }
 }

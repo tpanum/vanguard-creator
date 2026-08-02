@@ -117,6 +117,51 @@ shows all four.
 Three digits are refused outright at load (`card::stat_error`) rather than
 rendered overflowing — there is no spacing a third digit fits in.
 
+## Rules text that does not fit
+
+Custom cards carry far more rules text than the originals ever did — the longest
+of the 168 in `../bug-vanguards` is Ricardi Van Mouse at 366 characters, roughly
+three times the median and ten lines at the fixed size. Text that long has to be
+made to fit, and the way it is made to fit must not disturb the cards that fit
+already.
+
+So the overflow path is **gated on failure, not on length**: the text is set at
+`ability_size` in the normal box first, and only if that block overflows does
+anything else happen. Every original fits, so none of them ever reaches the code
+below and the accuracy suite is unchanged to the digit. Adding a knob that
+applies to all cards — a global size reduction, a tighter line height, a wider
+box — is the wrong shape for this problem, however much easier it looks.
+
+Overflowing text gets, in order:
+
+1. **The lower parchment.** The panel does not end at `text_box.bottom` (835).
+   Measured off the template it runs full width (83–635) to y≈754, narrows to the
+   column between the stat-bubble housings (144–574), and continues to y≈905
+   where the bottom banner cuts in. No original needs that strip, which is why
+   `text_box` stops short of it and every calibrated constant is measured in that
+   frame. `rules_overflow_top`/`_bottom` describe the real parchment, and only
+   overflow text is allowed down there.
+2. **A smaller size**, `ability_size` down to `ability_size_min`, stopping at the
+   largest that fits. Ricardi lands at 21, not the 20 it would need without the
+   lower strip.
+
+**Balance the block on its ink, not on its line boxes.** A line box carries a
+couple of pixels of leading above the first line and a full descent below the
+last, so centering the boxes leaves the text visibly high — it measured 3 px of
+parchment above and 17 below. `ink_padding` subtracts both using `ink_bounds`,
+the same reasoning that puts the stat bubbles on their ink. Margins then came out
+8 and 9. `rules_overflow_top_share` exists to bias that split, and is 0.5.
+
+Note that F1 cannot see any of this — it scores ability text on a blank canvas
+against the original scans, and no original overflows. What guards it is the unit
+tests in `src/text.rs` (text that fits never enters the path, the chosen size is
+the largest that fits, the block stays inside the parchment, the margins balance)
+and looking at a render. Regenerate one with:
+
+```sh
+vgc create <card>.yaml -o target/overflow
+```
+
 ## Original line breaks
 
 The 1997 cards were broken by hand, not by a width rule — Sidar Kondo breaks after `+3/+3` with room to spare on the line. Where a card's true breaks are known, encode them as `\n` in its YAML; the auto-wrap is a fallback for new cards, and scoring against it measures the wrap heuristic rather than the rendering. All four reference cards carry their originals' breaks.
