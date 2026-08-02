@@ -318,8 +318,21 @@ decisions are load-bearing:
   `wrap_text_split` re-wraps its own reconstructed output.
 - **A modal block is set flush left as a unit, and the unit is centered.**
   Ordinary Vanguard rules text centers every line individually; doing that to a
-  list leaves the bullets in a ragged column. `draw_lines` switches alignment
-  when any line carries an indent or a bullet.
+  list leaves the bullets in a ragged column. Whether a block is modal is decided
+  **once, for the whole block**, and passed into `draw_lines` — deciding it per
+  half meant an intro line long enough to wrap across the wide/narrow boundary
+  was centered above modes that were flush left, which read as two paragraphs.
+- **A modal block that spills into the narrow column is wrapped to the narrow
+  measure throughout**, intro included. The block is one list against one left
+  edge, and that edge is clamped to clear the stat-bubble housings — so measuring
+  the upper half against the *full* width let a long intro start at the clamped
+  edge and run off the right of the box, where the frame clipped it. Hyeena lost
+  45 px that way and Eric 23 px.
+
+`warn_if_outside_box` is the guard: it recomputes where each line will actually
+be drawn and warns when any of it lands outside the panel. Nothing else notices
+this class of fault, because the line is inside its measure — it is only in the
+wrong place.
 
 Consequences worth keeping: `—` is glued to the word before it during wrapping
 (`glue_dashes`), so it can never begin a line; `wrap_text_split` backs its split
