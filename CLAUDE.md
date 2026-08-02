@@ -152,11 +152,39 @@ parchment above and 17 below. `ink_padding` subtracts both using `ink_bounds`,
 the same reasoning that puts the stat bubbles on their ink. Margins then came out
 8 and 9. `rules_overflow_top_share` exists to bias that split, and is 0.5.
 
+### Text that cannot be set is refused
+
+Shrinking stops at `ability_size_min`. Past that there is nothing left to try, so
+**the card is refused and nothing is written** — `check_rules_fit` runs in
+`render_card` before a pixel is drawn, `create` exits non-zero, and `validate`
+reports the same thing so it can be caught earlier. Rendering it anyway would
+leave a PNG with its last lines across the bottom banner, which in a batch of 168
+cards is worse than no file: it sits there looking finished. This is the same
+call as `card::stat_error` refusing a three-digit stat.
+
+Two guards, and they catch different things:
+
+- **`ability_chars_max`** (650) is a *readability* limit. Text keeps fitting well
+  past the point where it is pleasant to read, because fitting only asks the type
+  to get smaller; 650 sets at 17 px and was chosen by rendering a ladder of
+  lengths and looking at it. The geometric ceiling is around 920, which is 14 px
+  in fourteen lines filling the panel edge to edge.
+- **The parchment check** counts pixels rather than characters, and is not
+  redundant with the limit. Fourteen short paragraphs is 226 characters — a
+  quarter of the limit — and still cannot be set, because the paragraph gaps make
+  it a 505 px block against 261 px of parchment.
+
+Size does not fall smoothly with length: 450 and 550 characters both set at 22 px,
+then 650 drops to 17, because the wrap crosses out of the full-width box into the
+narrow column between the stat-bubble housings. Re-render the ladder before moving
+`ability_chars_max`.
+
 Note that F1 cannot see any of this — it scores ability text on a blank canvas
 against the original scans, and no original overflows. What guards it is the unit
 tests in `src/text.rs` (text that fits never enters the path, the chosen size is
-the largest that fits, the block stays inside the parchment, the margins balance)
-and looking at a render. Regenerate one with:
+the largest that fits, the block stays inside the parchment, the margins balance,
+over-long text is refused, and short-but-untypesettable text is refused too) and
+looking at a render. Regenerate one with:
 
 ```sh
 vgc create <card>.yaml -o target/overflow
@@ -262,6 +290,27 @@ Vanguard metadata — `hand_modifier`, `life_modifier`, `flavor_text` — can be
 **Do NOT use `oracle_text` for the rules text.** Scryfall only stores modernized oracle text (e.g. "from the battlefield" instead of the original "from play"), which differs from what is printed on the physical cards and shown in the reference masks. Rules text must be sourced from card scans or other references to the original printed wording.
 
 See **[docs/scryfall.md](docs/scryfall.md)** for the queries, the fields worth trusting, and one-liners for pulling a card's image or opening it in a browser.
+
+## The rules of Magic
+
+The Comprehensive Rules are at <https://magic.wizards.com/en/rules>, published as
+DOCX, PDF and TXT. **Consult the TXT version** — it is one flat file, so a
+question is a `grep` away, where the PDF is not searchable from the shell.
+
+The download URLs carry the release date (`.../MagicCompRules 20260619.txt`) and
+change with every rules update, so start from the landing page rather than
+hardcoding one:
+
+```sh
+curl -sSL -A vgc "https://media.wizards.com/2026/downloads/MagicCompRules%2020260619.txt" -o /tmp/cr.txt
+grep -n -i vanguard /tmp/cr.txt
+```
+
+What is relevant here lives in rule **902** (Vanguard), rule **313** (the card
+type), and rules **211.1** and **212.1**, which define the hand and life
+modifiers this tool draws in the bubbles — a signed number or a zero, printed in
+the lower left and lower right corners. Reach for it when a card's wording or a
+stat value looks wrong; it says nothing about typography or layout.
 
 ## Which face goes where
 

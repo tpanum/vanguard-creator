@@ -64,13 +64,17 @@ pub fn run(
                 println!("Saved: {}", out_path.display());
             }
             Err(e) => {
-                eprintln!("warning: failed to render {}: {e:#}", card.name);
+                // A card that cannot be rendered correctly is refused, not
+                // warned about: the run must fail so nothing downstream treats
+                // the batch as complete.
+                eprintln!("error: refusing {}: {e:#}", card.name);
+                refused += 1;
             }
         }
     }
 
     if refused > 0 {
-        bail!("{refused} card definition(s) refused; see the errors above");
+        bail!("{refused} card(s) refused; see the errors above");
     }
 
     Ok(())
@@ -138,6 +142,20 @@ pub fn render_card(
     fonts: &Fonts,
 ) -> Result<RgbaImage> {
     let layout = &DEFAULT;
+
+    // Before anything is drawn: text that cannot be set inside the parchment
+    // fails the card outright. Rendering it anyway would write a PNG with its
+    // last lines across the bottom banner — worse than no file, because a batch
+    // of 168 cards leaves it sitting there looking finished.
+    if let Err(e) = text::check_rules_fit(
+        &card.ability,
+        card.flavor.as_deref(),
+        &fonts.body,
+        &fonts.body,
+        layout,
+    ) {
+        bail!(e);
+    }
 
     let (w, h) = template.map(|t| t.dimensions()).unwrap_or((718, 1024));
     let mut canvas = RgbaImage::new(w, h);

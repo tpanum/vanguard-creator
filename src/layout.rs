@@ -58,6 +58,27 @@ pub struct Layout {
     /// only after the block overflows the box, so every card that fits at full
     /// size — which is all 25 originals — renders exactly as before.
     pub ability_size_min: u32,
+    /// Longest ability text accepted, in characters. Cards above it are refused
+    /// rather than rendered.
+    ///
+    /// This is a readability limit, not a geometric one, and it is deliberately
+    /// stricter: text keeps *fitting* well past the point where it is pleasant
+    /// to read, since fitting only requires the type to keep getting smaller.
+    /// The geometric ceiling is around 920 characters — 14 px type in fourteen
+    /// lines, filling the panel edge to edge — and was rejected as a limit for
+    /// exactly that reason.
+    ///
+    /// 650 was chosen by rendering a ladder of lengths and looking at them: it
+    /// sets at 17 px, small against an original's 24 but still comfortable at
+    /// print size. For scale, the 168 custom cards in `../bug-vanguards` have a
+    /// median of 125 characters and a maximum of 366, so this is roughly 1.8×
+    /// the longest card anyone has actually written.
+    ///
+    /// Size does not fall smoothly with length — 450 and 550 characters both
+    /// set at 22 px, then 650 drops to 17 — because the wrap crosses out of the
+    /// full-width box into the narrow column between the stat-bubble housings
+    /// and loses width. Re-render the ladder before moving this.
+    pub ability_chars_max: usize,
     /// Minimum font size flavor text may shrink to when auto-scaling
     pub flavor_size_min: u32,
     /// Name font size: (x_scale, y_scale) in points.
@@ -195,6 +216,7 @@ pub const DEFAULT: Layout = Layout {
     para_gap: 20.0,
     ability_size: 24,
     ability_size_min: 14,
+    ability_chars_max: 650,
     flavor_size_min: 14,
     name_scale: (72.5, 56.0),
     name_max_width: 465.0,
