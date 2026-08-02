@@ -143,6 +143,15 @@ pub struct Line {
     /// Whether a bullet is stamped in the gutter to the left of this line.
     /// True on the first line of each mode only.
     pub bullet: bool,
+    /// Whether this line belongs to a modal run, and so is set flush against
+    /// the block's left edge rather than centered on its own.
+    ///
+    /// Scoped to the paragraph, not the card: a modal run is an intro line plus
+    /// the modes under it, which is always one paragraph, and an unrelated
+    /// paragraph on the same card is ordinary rules text. Deciding this per
+    /// card left Bushgeh's activated ability hanging under the bullets instead
+    /// of centered.
+    pub modal: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -440,6 +449,10 @@ pub fn wrap_text_indented(
         }
         first_para = false;
 
+        // A modal run is the whole paragraph: the line introducing the modes
+        // and the modes themselves are set as one flush-left unit.
+        let para_modal = para.split('\n').any(is_mode);
+
         let mut first_chunk = true;
         for raw_chunk in para.split('\n') {
             let mode = is_mode(raw_chunk);
@@ -463,6 +476,7 @@ pub fn wrap_text_indented(
                     tokens,
                     indent,
                     bullet: mode && i == 0,
+                    modal: para_modal,
                 }));
             }
         }
@@ -661,7 +675,7 @@ fn count_tokens(lines: &[WrappedLine]) -> usize {
 fn is_modal(lines: &[WrappedLine]) -> bool {
     lines
         .iter()
-        .any(|l| matches!(l, WrappedLine::Tokens(line) if line.bullet || line.indent > 0.0))
+        .any(|l| matches!(l, WrappedLine::Tokens(line) if line.modal))
 }
 
 /// Fit ability and flavor text within the layout's text box.
@@ -1198,16 +1212,7 @@ pub fn draw_rules_text(
             (narrow_center_x - wide_w.max(narrow_w) / 2.0).clamp(lo, hi.max(lo))
         }
     };
-    let modal = is_modal(&fit.lines) || is_modal(&fit.narrow_lines);
-    warn_if_outside_box(
-        fit,
-        font,
-        layout,
-        center_x,
-        narrow_center_x,
-        modal_left,
-        modal,
-    );
+    warn_if_outside_box(fit, font, layout, center_x, narrow_center_x, modal_left);
     let modal_left = Some(modal_left);
 
     // Ability lines 1-3 (full-width centering)
@@ -1221,7 +1226,6 @@ pub fn draw_rules_text(
         layout.symbol_y_offset,
         bullet_radius,
         modal_left,
-        modal,
         pen,
         &mut y,
     );
@@ -1237,7 +1241,6 @@ pub fn draw_rules_text(
         layout.symbol_y_offset,
         bullet_radius,
         modal_left,
-        modal,
         pen,
         &mut y,
     );
@@ -1261,7 +1264,6 @@ pub fn draw_rules_text(
             layout.symbol_y_offset,
             layout.mode_bullet_radius,
             None,
-            false,
             pen,
             &mut y,
         );
@@ -1300,7 +1302,7 @@ fn block_width(lines: &[WrappedLine], font: &FontRef, spec: &TypeSpec) -> f32 {
     lines
         .iter()
         .filter_map(|l| match l {
-            WrappedLine::Tokens(line) => {
+            WrappedLine::Tokens(line) if line.modal => {
                 Some(line.indent + measure_tokens(&line.tokens, font, spec.scale, spec.symbol_size))
             }
             _ => None,
@@ -1318,14 +1320,13 @@ fn half_extent(
     spec: &TypeSpec,
     center_x: f32,
     block_left: f32,
-    modal: bool,
 ) -> Option<(f32, f32)> {
     lines
         .iter()
         .filter_map(|l| match l {
             WrappedLine::Tokens(line) => {
                 let w = measure_tokens(&line.tokens, font, spec.scale, spec.symbol_size);
-                let x = if modal {
+                let x = if line.modal {
                     block_left + line.indent
                 } else {
                     center_x - w / 2.0
@@ -1353,7 +1354,6 @@ fn warn_if_outside_box(
     center_x: f32,
     narrow_center_x: f32,
     block_left: f32,
-    modal: bool,
 ) {
     // Measured against the box itself, not the padded measure: the padding is a
     // margin the wrap aims for, and a line landing a pixel over it is invisible.
@@ -1375,7 +1375,7 @@ fn warn_if_outside_box(
     ];
 
     for (lines, cx, lo, hi) in halves {
-        let Some((left, right)) = half_extent(lines, font, &fit.spec, cx, block_left, modal) else {
+        let Some((left, right)) = half_extent(lines, font, &fit.spec, cx, block_left) else {
             continue;
         };
         if right > hi + 0.5 {
@@ -1409,7 +1409,6 @@ fn draw_lines(
     // block alone; the rules text passes one shared value so that lines 4+ line
     // up with the modes above them even though they are centered in a narrower box.
     modal_left: Option<f32>,
-    modal: bool,
     pen: Pen,
     y: &mut f32,
 ) {
@@ -1438,9 +1437,10 @@ fn draw_lines(
                 tokens,
                 indent,
                 bullet,
+                modal,
             }) => {
                 let line_w = measure_tokens(tokens, font, spec.scale, spec.symbol_size);
-                let mut x = if modal {
+                let mut x = if *modal {
                     block_left + indent
                 } else {
                     center_x - line_w / 2.0
