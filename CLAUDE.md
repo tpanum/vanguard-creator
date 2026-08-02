@@ -19,6 +19,27 @@ Every image `vgc` writes carries the version of the tool that produced it (`vgc 
 
 The EXIF block is hand-built (a minimal little-endian TIFF header with one IFD0 entry) and spliced into the encoded bytes — after `IHDR` for PNG, after `SOI` for JPEG. Keep the unit tests in `src/meta.rs` passing if you touch that byte layout; one of them round-trips through `image`'s own `PngDecoder::exif_metadata`, which is what catches a malformed block.
 
+## Releasing
+
+A release is two steps, both on `main`, and nothing else:
+
+1. A commit that changes only the `version` field in `Cargo.toml` (and the
+   matching line `cargo build` writes into `Cargo.lock`), subject
+   `Bump version to <X.Y.Z>`.
+2. An annotated tag `v<X.Y.Z>` on that commit, pushed.
+
+Pushing the tag is what triggers `.github/workflows/release.yml`, which builds
+Linux musl, macOS aarch64 and Windows msvc, attaches the three archives and
+generates the notes.
+
+**Do not open a pull request for a release.** The bump carries no reviewable
+content — it is a consequence of what already landed, not a change to it — so a
+branch, a PR and a second CI run buy nothing. Commit it straight to `main`.
+
+Because the version is stamped into every image `vgc` writes, a bump is what
+makes a card traceable to the build that rendered it; check `vgc --version`
+against `Cargo.toml` before tagging.
+
 ## Testing text rendering
 
 Whenever designing or modifying text insertion (placement, sizing, font, layout), you MUST use the text-pixel F1 score as the feedback metric. Raw pixel diff is useless here because the template background dominates the signal.
@@ -145,12 +166,34 @@ Overflowing text gets, in order:
    largest that fits. Ricardi lands at 21, not the 20 it would need without the
    lower strip.
 
-**Balance the block on its ink, not on its line boxes.** A line box carries a
-couple of pixels of leading above the first line and a full descent below the
-last, so centering the boxes leaves the text visibly high — it measured 3 px of
-parchment above and 17 below. `ink_padding` subtracts both using `ink_bounds`,
-the same reasoning that puts the stat bubbles on their ink. Margins then came out
-8 and 9. `rules_overflow_top_share` exists to bias that split, and is 0.5.
+### Where the block sits
+
+`rules_block_top` places every block, overflowing or not, and it is one
+expression. Earlier there were three rules — calibrated centring, a centring in
+the full text box, and a centring in the parchment for overflow — and the seams
+showed: a block 3 px taller could land 35 px lower, and a card just tall enough
+to overflow sat 20 px below one that was not.
+
+The measurement behind it: **every original centres its ability on y ≈ 701.** One
+line spans 688–714, two 675–728, three 659–741 — same middle, growing both ways.
+Every one of the 25 is 30, 60 or 90 px tall (`rules_calibrated_height`), so that
+centring is calibrated over exactly that range and nothing else.
+
+Kept up, it walks a taller block off the top: a custom card's 120 px block put
+its first line on the panel's top border. So the top pins where a 90 px block
+starts — y = 656 — and the block grows downward from there:
+
+```
+y = clamp(701 − h/2,  low = 656,  high = 905 − h)
+```
+
+Two things fall out of this rather than needing their own rules. Full-width lines
+stay clear of the stat-bubble housings, because the wide portion is at most three
+lines and 656 + 90 = 746, above the narrowing at 754. And every long card gets
+the same top margin, which centring did not give.
+
+Blocks of 90 px and under are untouched by all of it, which is why the accuracy
+report is byte-identical: no original is ever tall enough for the anchor to bind.
 
 ### Text that cannot be set is refused
 
@@ -188,6 +231,37 @@ looking at a render. Regenerate one with:
 
 ```sh
 vgc create <card>.yaml -o target/overflow
+```
+
+## Widow control
+
+Greedy wrapping fills each line to the measure and lets the remainder fall where
+it lands, which on centered text leaves a full line followed by a stub: `flash.`
+alone under a full line is 12% of the measure and reads as a mistake. The survey
+found **80 such lines on 73 of 167 custom cards**.
+
+`wrap_paragraph` narrows the measure in 4 px steps and takes the first setting
+whose last line clears `widow_min_fraction` (0.35) — **without changing the line
+count**. That invariant is what makes it safe to drop into the middle of the
+pipeline: block height, the size search, the overflow decision and vertical
+placement all key off the number of lines, so only the break points move. If no
+narrower measure helps, the greedy wrap stands, so a paragraph can only improve
+or stay as it was. `MIN_WIDOW_MEASURE` stops the hunt at 55% of the measure,
+past which a paragraph reads as a column.
+
+It took the corpus from 80 widows to 2 — the two the algorithm cannot fix without
+adding a line, which it is not allowed to do.
+
+**No original is affected at any threshold**, and this is structural rather than
+lucky: all 25 carry their printed line breaks as `\n` or are a single line, so
+none of them auto-wraps and `wrap_paragraph` is never on their path. That is also
+why balancing is the right target — the 1997 cards were broken by hand, and Sidar
+Kondo breaks after `+3/+3` with room to spare on the line.
+
+Survey the corpus before moving the knob:
+
+```sh
+cargo run --release --example widows -- ../bug-vanguards/vanguards
 ```
 
 ## Original line breaks

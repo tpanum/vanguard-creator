@@ -91,11 +91,17 @@ pub struct Layout {
     /// 1.0 = tight, 1.25 = standard, higher values add more breathing room.
     pub line_height_factor: f32,
     /// Effective height (px) of the centering region for ability text, measured
-    /// from box_top. The text block is centered within this region:
-    ///   offset = max(0, (centering_height - block_h) / 2)
-    /// Shorter texts land lower; longer texts land higher — matching original
-    /// Vanguard card layouts.
+    /// from box_top. A block no taller than `rules_calibrated_height` is centered
+    /// within this region, which puts its middle on y ≈ 701.
+    ///
+    /// That is where every original sits. Measured off the scans: a one-line
+    /// ability spans 688–714, two lines 675–728, three lines 659–741 — same
+    /// centre, growing in both directions.
     pub rules_centering_height: f32,
+    /// Tallest ability block any original has (px), and so the limit of what the
+    /// centering above is calibrated for. Every one of the 25 is exactly 30, 60
+    /// or 90 px — one, two or three lines with no paragraph gaps.
+    pub rules_calibrated_height: f32,
     /// Stats font size (points)
     pub stats_size: f32,
     /// Letter spacing between the glyphs of a stat value of two or more digits,
@@ -128,17 +134,26 @@ pub struct Layout {
     /// Top of that same region: the first row of parchment below the panel's
     /// inner border.
     pub rules_overflow_top: f32,
-    /// Share of the leftover parchment placed above overflow text, the rest
-    /// going below. 0.5 sets equal ink margins top and bottom.
+    /// Shortest a paragraph's last line may be, as a fraction of the measure.
     ///
-    /// Margins are measured on ink, not on line boxes. A line box carries a few
-    /// pixels of leading above the first line and a full descent below the last,
-    /// so centering the boxes leaves the text visibly high — 3 px of parchment
-    /// above and 17 below on the longest custom card in the set.
-    pub rules_overflow_top_share: f32,
-    /// Minimum y coordinate for the top of the ability-text block (px).
-    /// Short blocks are never positioned above this line. Must be ≥ text_box top.
-    pub rules_min_y: f32,
+    /// Below this the line reads as a stub rather than as the end of a
+    /// paragraph — `flash.` alone under a full line is 12% of the measure — and
+    /// `wrap_paragraph` narrows the setting until it clears, without changing
+    /// the line count. Survey the corpus with `cargo run --release --example
+    /// widows` before moving it.
+    ///
+    /// No original is affected at any value: all 25 carry their printed line
+    /// breaks as `\n` or are a single line, so none of them auto-wraps.
+    pub widow_min_fraction: f32,
+    /// Block height (px) above which ability text counts as overflowing the
+    /// normal box, and so may use the lower parchment and a smaller size.
+    ///
+    /// Slightly taller than `text_box` itself, which is why it is stated rather
+    /// than derived: the box was calibrated to where the originals *put* text,
+    /// and a block may reach a couple of pixels past it before anything needs to
+    /// change. Placement no longer reads this — `rules_block_top` anchors the
+    /// top — so it decides only whether a card takes the overflow path.
+    pub rules_normal_height: f32,
     /// Maximum number of visible ability-text lines (Tokens entries) accepted.
     pub max_ability_lines: usize,
     /// Exponent applied to glyph coverage before compositing: `a' = a^ink_gain`.
@@ -192,11 +207,6 @@ impl Layout {
         self.narrow_text_box.width() - self.text_padding as f32 * 2.0
     }
 
-    /// Maximum block height that keeps the block's top at or below `rules_min_y`.
-    pub fn pushup_free_height(&self) -> f32 {
-        self.text_box.height() - (self.rules_min_y - self.text_box.top as f32)
-    }
-
     /// Height of the parchment available to ability text that has overflowed
     /// the normal box, which reaches below `text_box.bottom`.
     pub fn overflow_height(&self) -> f32 {
@@ -222,13 +232,14 @@ pub const DEFAULT: Layout = Layout {
     name_max_width: 465.0,
     line_height_factor: 1.25,
     rules_centering_height: 122.0,
+    rules_calibrated_height: 90.0,
     stats_size: 34.5,
     stats_multi_digit_tracking: -3.75,
     narrow_text_box: Rect::new(144, 640, 574, 835),
     rules_overflow_bottom: 905.0,
     rules_overflow_top: 644.0,
-    rules_overflow_top_share: 0.5,
-    rules_min_y: 638.0,
+    widow_min_fraction: 0.35,
+    rules_normal_height: 197.0,
     max_ability_lines: 8,
     ink_gain: 0.87,
     symbol_scale: 0.95,
