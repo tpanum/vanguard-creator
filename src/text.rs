@@ -175,6 +175,54 @@ fn glue_dashes(para: &str) -> Vec<String> {
     words
 }
 
+/// Glue a quoted ability into one unbreakable word when it fits the measure.
+///
+/// A card that grants an ability quotes it — `Bird creatures you control have
+/// “{T}: Draw a card.”` — and the quote is a unit: broken across lines it reads
+/// as two fragments, one of them starting mid-clause. Wrapping is greedy and
+/// knows nothing about that, so it happily ends a line on `have “{T}:`.
+///
+/// A quote wider than the measure cannot be kept whole and is left breakable —
+/// the long granted abilities on Illobug, Vlademir and Yodog are all in that
+/// class. Everything narrower becomes a single word, which the wrapper then
+/// cannot split.
+///
+/// Both curly and straight quotes are recognised; straight ones are paired in
+/// order, since `"` gives no clue which end it is.
+fn glue_quotes(
+    words: Vec<String>,
+    font: &FontRef,
+    scale: PxScale,
+    symbol_size: u32,
+    max_width: f32,
+) -> Vec<String> {
+    let opens = |w: &str| w.starts_with('\u{201c}') || w.starts_with('"');
+    let closes = |w: &str| {
+        let t = w.trim_end_matches(|c: char| c.is_ascii_punctuation() && c != '"');
+        t.ends_with('\u{201d}') || t.ends_with('"')
+    };
+
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < words.len() {
+        if opens(&words[i]) && !closes(&words[i]) {
+            // Find the word carrying the closing quote.
+            if let Some(end) = (i + 1..words.len()).find(|&j| closes(&words[j])) {
+                let joined = words[i..=end].join(" ");
+                let width = measure_tokens(&tokenize(&joined), font, scale, symbol_size);
+                if width <= max_width {
+                    out.push(joined);
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(words[i].clone());
+        i += 1;
+    }
+    out
+}
+
 fn wrap_greedy(
     para: &str,
     font: &FontRef,
@@ -188,7 +236,8 @@ fn wrap_greedy(
     let mut current: Vec<Token> = Vec::new();
     let mut current_w = 0.0f32;
 
-    for word in glue_dashes(para) {
+    let words = glue_quotes(glue_dashes(para), font, scale, symbol_size, max_width);
+    for word in words {
         let word = word.as_str();
         let word_tokens = tokenize(word);
         let word_w: f32 = word_tokens
@@ -1422,6 +1471,54 @@ mod tests {
         assert!(paragraphs.chars().count() < layout::DEFAULT.ability_chars_max);
         let err = check(&paragraphs).unwrap_err();
         assert!(err.contains("does not fit"), "{err}");
+    }
+
+    /// A granted ability is a unit: `have “{T}: Draw a card.”` must not break
+    /// after the opening quote, which is what greedy wrapping did.
+    #[test]
+    fn a_quote_that_fits_is_not_broken() {
+        let text = "Bird creatures you control have \u{201c}{T}: Draw a card.\u{201d}";
+        let lines = rendered(&wrap(text, layout::DEFAULT.rules_width()));
+        assert!(lines.len() > 1, "should wrap at all: {lines:?}");
+        let quote_line = lines
+            .iter()
+            .find(|(_, l)| l.contains('\u{201c}'))
+            .expect("a line carries the quote");
+        assert!(
+            quote_line.1.contains('\u{201d}'),
+            "the quote was split across lines: {lines:?}"
+        );
+    }
+
+    /// A quote wider than the measure cannot be kept whole, and must stay
+    /// breakable rather than overflowing the box.
+    #[test]
+    fn a_quote_too_wide_to_fit_still_breaks() {
+        let text = "Create a token with \u{201c}Sacrifice this creature: This creature \
+                    deals 1 damage to any target and you gain 1 life.\u{201d}";
+        let width = layout::DEFAULT.rules_width();
+        let lines = rendered(&wrap(text, width));
+        let opens = lines
+            .iter()
+            .position(|(_, l)| l.contains('\u{201c}'))
+            .unwrap();
+        let closes = lines
+            .iter()
+            .position(|(_, l)| l.contains('\u{201d}'))
+            .unwrap();
+        assert!(
+            closes > opens,
+            "an over-wide quote must still break: {lines:?}"
+        );
+        let fonts = Fonts::load().unwrap();
+        let spec = TypeSpec::ability(layout::DEFAULT.ability_size, &layout::DEFAULT);
+        for (_, line) in &lines {
+            let w = measure_str(line, &fonts.body, spec.scale);
+            assert!(
+                w <= width,
+                "line {line:?} is {w}px, over the {width}px measure"
+            );
+        }
     }
 
     #[test]

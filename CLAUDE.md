@@ -264,6 +264,21 @@ Survey the corpus before moving the knob:
 cargo run --release --example widows -- ../bug-vanguards/vanguards
 ```
 
+### Quoted abilities are one word
+
+A card that grants an ability quotes it, and the quote is a unit: greedy
+wrapping ended a line on `Bird creatures you control have “{T}:`, leaving the
+granted ability in two fragments. `glue_quotes` joins a quoted span into a single
+unbreakable word, in the same way `glue_dashes` already handles the mode dash.
+
+Only when it fits: a quote wider than the measure stays breakable, since the
+alternative is a line that overflows the box. The long granted abilities on
+Illobug, Vlademir and Yodog are all in that class and are left alone; Lau, Zigurt
+and Bogton are the three the corpus had to fix.
+
+Gluing is allowed to cost a line — quote integrity wins over block height — but
+in practice none of the three needed one.
+
 ## Original line breaks
 
 The 1997 cards were broken by hand, not by a width rule — Sidar Kondo breaks after `+3/+3` with room to spare on the line. Where a card's true breaks are known, encode them as `\n` in its YAML; the auto-wrap is a fallback for new cards, and scoring against it measures the wrap heuristic rather than the rendering. All four reference cards carry their originals' breaks.
