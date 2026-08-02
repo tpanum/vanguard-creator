@@ -196,6 +196,50 @@ ability: |-
   {2}{G}: Second ability text.
 ```
 
+### Modal Abilities
+
+A line beginning with `* ` is one **mode** of a modal ability. Modes are set as a
+bulleted list with a hanging indent, and the line above them automatically gains
+the em dash the printed cards put after the mode-choosing clause:
+
+```yaml
+ability: |-
+  Choose one
+  * Target creature gets +2/+0.
+  * Destroy target artifact.
+```
+
+renders as
+
+```
+                Choose one —
+             • Target creature gets +2/+0.
+             • Destroy target artifact.
+```
+
+The triggered case is the same construct — only the introducing line differs, and
+the dash lands wherever that line ends:
+
+```yaml
+ability: |-
+  At the beginning of your upkeep, choose one
+  * Put a +1/+1 counter on each Sliver you control.
+  * Draw a card, then discard a card.
+  * You gain 2 life.
+```
+
+Anything can introduce a list this way — `Choose two`, `Choose one or both`,
+`Choose one. If you control a Sliver, choose both instead` — because the dash is
+derived from the modes below rather than written out. Do not type the `—`
+yourself; if you do, it is left as-is rather than doubled.
+
+A mode that is too long to fit wraps under its own text, not under its bullet,
+and only its first line is bulleted. A modal block is set flush left as a unit
+and that unit is centered, so the bullets stay in one column even when the list
+runs past line 3 into the narrower space between the stat bubbles.
+
+To begin a line with a literal asterisk, escape it: `\*`.
+
 ## Assets
 
 All required assets — card template, fonts (Fremont Regular, MPlantin), and mana symbol PNGs — are bundled into the binary. No installation step or external asset directory is needed. Pass `--template <file>` to `vgc render` to override the embedded template with a custom one.

@@ -132,13 +132,47 @@ pub fn measure_tokens(tokens: &[Token], font: &FontRef, scale: PxScale, symbol_s
 
 // ── Word-wrapping ─────────────────────────────────────────────────────────────
 
+/// One laid-out line of rules text.
+#[derive(Debug, Clone)]
+pub struct Line {
+    pub tokens: Vec<Token>,
+    /// Left inset from the block's left edge, in px. Non-zero only for the
+    /// lines of a mode, so that a mode which wraps hangs under its own text
+    /// rather than under its bullet.
+    pub indent: f32,
+    /// Whether a bullet is stamped in the gutter to the left of this line.
+    /// True on the first line of each mode only.
+    pub bullet: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum WrappedLine {
-    Tokens(Vec<Token>),
+    Tokens(Line),
     /// Extra inter-paragraph gap (triggered by `\n\n` in input).
     ParagraphBreak,
     /// Forced line break with normal line spacing (triggered by single `\n`).
     HardBreak,
+}
+
+/// Split a paragraph into wrappable words, keeping an em dash attached to the
+/// word before it.
+///
+/// A dash that introduces a mode list must never begin a line: on its own it
+/// says nothing, and the clause it belongs to has already ended above it. It is
+/// the same rule the printed cards follow, and the reason `Choose one —` is one
+/// unit to the wrapper even though it is two words to `split_whitespace`.
+fn glue_dashes(para: &str) -> Vec<String> {
+    let mut words: Vec<String> = Vec::new();
+    for word in para.split_whitespace() {
+        match words.last_mut() {
+            Some(prev) if word == MODE_DASH.to_string() => {
+                prev.push(' ');
+                prev.push(MODE_DASH);
+            }
+            _ => words.push(word.to_string()),
+        }
+    }
+    words
 }
 
 fn wrap_paragraph(
@@ -154,7 +188,8 @@ fn wrap_paragraph(
     let mut current: Vec<Token> = Vec::new();
     let mut current_w = 0.0f32;
 
-    for word in para.split_whitespace() {
+    for word in glue_dashes(para) {
+        let word = word.as_str();
         let word_tokens = tokenize(word);
         let word_w: f32 = word_tokens
             .iter()
@@ -183,10 +218,77 @@ fn wrap_paragraph(
     lines
 }
 
+// ── Modal abilities ───────────────────────────────────────────────────────────
+
+/// Line prefix that marks one mode of a modal ability.
+///
+/// A line beginning with `* ` is a mode: it is set as a bulleted, hanging-
+/// indented item. `\*` escapes it back to a literal asterisk.
+const MODE_MARKER: &str = "*";
+
+/// The dash the printed cards put after the mode-choosing clause.
+const MODE_DASH: char = '—';
+
+/// The mode indent at a given ability-text size.
+///
+/// Overflowing text is set smaller than `ability_size`, and the gutter has to
+/// come down with it: it is a typographic indent, roughly proportional to the
+/// type, not a fixed margin. Held constant, a list at 16 px inside a 24 px
+/// gutter reads as two loose columns.
+fn mode_indent_at(size: u32, layout: &Layout) -> f32 {
+    layout.mode_indent * size as f32 / layout.ability_size as f32
+}
+
+/// Is this source line one mode of a modal ability?
+fn is_mode(line: &str) -> bool {
+    let t = line.trim_start();
+    t == MODE_MARKER || t.starts_with("* ")
+}
+
+/// The text of a mode, with its marker (or the `\` that escapes one) removed.
+fn strip_mode_marker(line: &str) -> String {
+    let t = line.trim_start();
+    match t.strip_prefix(MODE_MARKER) {
+        Some(rest) => rest.trim_start().to_string(),
+        None => t.strip_prefix('\\').unwrap_or(t).to_string(),
+    }
+}
+
+/// Append the em dash to any line that introduces a run of modes.
+///
+/// This is what makes the triggered and untriggered cases one construct rather
+/// than two: the difference between `Choose one —` and `When ~ attacks, choose
+/// one —` is only what the author wrote on the introducing line, so the dash is
+/// derived from the presence of modes below it and never spelled out. A line
+/// that already ends in one is left alone, which is what keeps the pass
+/// idempotent — `wrap_text_split` re-wraps its own output.
+fn insert_mode_dashes(text: &str) -> String {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+
+    for (i, line) in lines.iter().enumerate() {
+        let next_is_mode = lines[i + 1..]
+            .iter()
+            .find(|l| !l.trim().is_empty())
+            .is_some_and(|l| is_mode(l));
+
+        let trimmed = line.trim_end();
+        if next_is_mode && !trimmed.is_empty() && !is_mode(line) && !trimmed.ends_with(MODE_DASH) {
+            out.push(format!("{trimmed} {MODE_DASH}"));
+        } else {
+            out.push((*line).to_string());
+        }
+    }
+
+    out.join("\n")
+}
+
 /// Word-wrap ability text into lines.
 ///
 /// `\n\n` separates paragraphs (inserts a `ParagraphBreak` with extra spacing).
 /// Single `\n` is a hard line break (inserts a `HardBreak`, normal line spacing).
+/// A line starting with `* ` is one mode of a modal ability — see
+/// [`insert_mode_dashes`].
 pub fn wrap_text(
     text: &str,
     font: &FontRef,
@@ -194,6 +296,20 @@ pub fn wrap_text(
     max_width: f32,
     symbol_size: u32,
 ) -> Vec<WrappedLine> {
+    wrap_text_indented(text, font, scale, max_width, 0.0, symbol_size)
+}
+
+/// `wrap_text` with the mode indent supplied. Zero disables the indent (and so
+/// the bullets), which is what every caller that has no `Layout` to hand wants.
+pub fn wrap_text_indented(
+    text: &str,
+    font: &FontRef,
+    scale: PxScale,
+    max_width: f32,
+    mode_indent: f32,
+    symbol_size: u32,
+) -> Vec<WrappedLine> {
+    let text = insert_mode_dashes(text);
     let mut all_lines: Vec<WrappedLine> = Vec::new();
     let mut first_para = true;
 
@@ -208,8 +324,12 @@ pub fn wrap_text(
         first_para = false;
 
         let mut first_chunk = true;
-        for chunk in para.split('\n') {
-            let chunk = chunk.split_whitespace().collect::<Vec<_>>().join(" ");
+        for raw_chunk in para.split('\n') {
+            let mode = is_mode(raw_chunk);
+            let chunk = strip_mode_marker(raw_chunk)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
             if chunk.is_empty() {
                 continue;
             }
@@ -217,9 +337,15 @@ pub fn wrap_text(
                 all_lines.push(WrappedLine::HardBreak);
             }
             first_chunk = false;
-            let wrapped = wrap_paragraph(&chunk, font, scale, max_width, symbol_size);
-            for line in wrapped {
-                all_lines.push(WrappedLine::Tokens(line));
+
+            let indent = if mode { mode_indent } else { 0.0 };
+            let wrapped = wrap_paragraph(&chunk, font, scale, max_width - indent, symbol_size);
+            for (i, tokens) in wrapped.into_iter().enumerate() {
+                all_lines.push(WrappedLine::Tokens(Line {
+                    tokens,
+                    indent,
+                    bullet: mode && i == 0,
+                }));
             }
         }
     }
@@ -235,11 +361,22 @@ fn lines_to_text(lines: &[WrappedLine]) -> String {
     let mut prev_tokens = false;
     for line in lines {
         match line {
-            WrappedLine::Tokens(tokens) => {
-                if prev_tokens {
+            WrappedLine::Tokens(line) => {
+                // A mode starts a fresh source line carrying its marker back;
+                // its wrapped continuations rejoin it with a space.
+                if line.bullet {
+                    // A break may already have been emitted for the HardBreak
+                    // entry that precedes this mode; a second one would read
+                    // back as a paragraph break and open a gap the list has not
+                    // asked for.
+                    if !out.is_empty() && !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                    out.push_str("* ");
+                } else if prev_tokens {
                     out.push(' ');
                 }
-                for t in tokens {
+                for t in &line.tokens {
                     out.push_str(&t.to_text_repr());
                 }
                 prev_tokens = true;
@@ -262,6 +399,7 @@ fn lines_to_text(lines: &[WrappedLine]) -> String {
 /// re-wrapped at `narrow_max_width` and returned as the second element.
 ///
 /// If the text fits entirely within `wide_limit` lines, the second Vec is empty.
+#[allow(clippy::too_many_arguments)]
 pub fn wrap_text_split(
     text: &str,
     font: &FontRef,
@@ -269,9 +407,10 @@ pub fn wrap_text_split(
     wide_max_width: f32,
     narrow_max_width: f32,
     wide_limit: usize,
+    mode_indent: f32,
     symbol_size: u32,
 ) -> (Vec<WrappedLine>, Vec<WrappedLine>) {
-    let all = wrap_text(text, font, scale, wide_max_width, symbol_size);
+    let all = wrap_text_indented(text, font, scale, wide_max_width, mode_indent, symbol_size);
 
     // Count visible content lines (Tokens) plus paragraph separators.
     let total: usize = all
@@ -298,6 +437,17 @@ pub fn wrap_text_split(
         }
     }
 
+    // Never break a mode across the width change: the narrow half is re-wrapped
+    // from reconstructed text, which can only carry a mode that starts there.
+    // Backing the split up to the mode's bullet keeps it whole, and keeps a
+    // mode's own lines at one measure, which is what the printed lists do.
+    while split_at > 0 && split_at < all.len() {
+        match &all[split_at] {
+            WrappedLine::Tokens(l) if l.indent > 0.0 && !l.bullet => split_at -= 1,
+            _ => break,
+        }
+    }
+
     let wide_lines: Vec<WrappedLine> = all[..split_at].to_vec();
     let rest = &all[split_at..];
 
@@ -312,11 +462,12 @@ pub fn wrap_text_split(
     let mut narrow_lines = if overflow_text.trim().is_empty() {
         Vec::new()
     } else {
-        wrap_text(
+        wrap_text_indented(
             overflow_text.trim(),
             font,
             scale,
             narrow_max_width,
+            mode_indent,
             symbol_size,
         )
     };
@@ -395,6 +546,7 @@ pub fn fit_rules_text(
     // needed, expanded margins are tried before accepting the narrow split.
     let wrap_at = |size: u32| {
         let spec = TypeSpec::ability(size, layout);
+        let mode_indent = mode_indent_at(size, layout);
         let (wide, narrow) = wrap_text_split(
             ability,
             font,
@@ -402,6 +554,7 @@ pub fn fit_rules_text(
             layout.rules_width(),
             layout.rules_width_narrow(),
             WIDE_LINE_LIMIT,
+            mode_indent,
             spec.symbol_size,
         );
         let (wide, narrow) = if narrow.is_empty() {
@@ -414,6 +567,7 @@ pub fn fit_rules_text(
                 layout.rules_width_expanded(),
                 layout.rules_width_narrow(),
                 WIDE_LINE_LIMIT,
+                mode_indent,
                 spec.symbol_size,
             )
         };
@@ -781,9 +935,12 @@ pub fn draw_text_centered_on_baseline(
 /// parchment edge agree with what the eye sees.
 fn ink_padding(fit: &RulesFit, font: &FontRef) -> (f32, f32) {
     let text_of = |line: &WrappedLine| match line {
-        WrappedLine::Tokens(tokens) => {
-            Some(tokens.iter().map(|t| t.to_text_repr()).collect::<String>())
-        }
+        WrappedLine::Tokens(line) => Some(
+            line.tokens
+                .iter()
+                .map(|t| t.to_text_repr())
+                .collect::<String>(),
+        ),
         _ => None,
     };
     let visible = || {
@@ -822,6 +979,9 @@ pub fn draw_rules_text(
     let ability_h = block_height(&fit.lines, fit.spec.line_height, layout.para_gap)
         + block_height(&fit.narrow_lines, fit.spec.line_height, layout.para_gap);
 
+    // The bullet follows the type down with the indent it sits in.
+    let bullet_radius = layout.mode_bullet_radius * fit.spec.scale.y / layout.ability_size as f32;
+
     // Short blocks: center within the calibrated centering region.
     // Tall blocks that exceed that region: center within the full text box.
     // y_start is floored at rules_min_y so long blocks never drift above it.
@@ -842,6 +1002,26 @@ pub fn draw_rules_text(
         (layout.text_box.top as f32 + offset).max(layout.rules_min_y)
     };
 
+    // A modal ability is one list even when it spills into the narrow box, so
+    // both halves are set flush against a single left edge: the widest line of
+    // either, centered where the narrower half has to live.
+    let modal_left = {
+        let wide_w = block_width(&fit.lines, font, &fit.spec);
+        let narrow_w = block_width(&fit.narrow_lines, font, &fit.spec);
+        if fit.narrow_lines.is_empty() {
+            center_x - wide_w / 2.0
+        } else {
+            // Centering on the widest line of either half can push the edge out
+            // past the narrow box and into the stat-bubble housings, so it is
+            // clamped to what the narrow half can actually occupy.
+            let pad = layout.text_padding as f32;
+            let lo = layout.narrow_text_box.left as f32 + pad;
+            let hi = layout.narrow_text_box.right as f32 - pad - narrow_w;
+            (narrow_center_x - wide_w.max(narrow_w) / 2.0).clamp(lo, hi.max(lo))
+        }
+    };
+    let modal_left = Some(modal_left);
+
     // Ability lines 1-3 (full-width centering)
     draw_lines(
         canvas,
@@ -851,6 +1031,8 @@ pub fn draw_rules_text(
         center_x,
         layout.para_gap,
         layout.symbol_y_offset,
+        bullet_radius,
+        modal_left,
         pen,
         &mut y,
     );
@@ -864,6 +1046,8 @@ pub fn draw_rules_text(
         narrow_center_x,
         layout.para_gap,
         layout.symbol_y_offset,
+        bullet_radius,
+        modal_left,
         pen,
         &mut y,
     );
@@ -885,10 +1069,52 @@ pub fn draw_rules_text(
             flavor_cx,
             layout.para_gap,
             layout.symbol_y_offset,
+            layout.mode_bullet_radius,
+            None,
             pen,
             &mut y,
         );
     }
+}
+
+/// Draw a filled, antialiased disc — the bullet of a modal ability.
+///
+/// Drawn rather than set as `•` so that a mode's bullet is the same mark at the
+/// same weight whatever face the rules text is in, and so that a font missing
+/// the glyph cannot turn a mode list into a row of tofu.
+fn fill_disc(canvas: &mut RgbaImage, cx: f32, cy: f32, radius: f32, pen: Pen) {
+    let r = radius.max(0.0);
+    let x0 = (cx - r - 1.0).floor().max(0.0) as u32;
+    let y0 = (cy - r - 1.0).floor().max(0.0) as u32;
+    let x1 = ((cx + r + 1.0).ceil() as u32).min(canvas.width());
+    let y1 = ((cy + r + 1.0).ceil() as u32).min(canvas.height());
+
+    for py in y0..y1 {
+        for px in x0..x1 {
+            let dx = px as f32 + 0.5 - cx;
+            let dy = py as f32 + 0.5 - cy;
+            // Coverage falls off over the outermost pixel, matching the way the
+            // glyph rasterizer antialiases an edge.
+            let coverage = (r + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0);
+            if coverage > 0.0 {
+                let existing = *canvas.get_pixel(px, py);
+                canvas.put_pixel(px, py, blend(&existing, pen.color, pen.apply(coverage)));
+            }
+        }
+    }
+}
+
+/// Width of the widest line in a block, counting each line's indent.
+fn block_width(lines: &[WrappedLine], font: &FontRef, spec: &TypeSpec) -> f32 {
+    lines
+        .iter()
+        .filter_map(|l| match l {
+            WrappedLine::Tokens(line) => {
+                Some(line.indent + measure_tokens(&line.tokens, font, spec.scale, spec.symbol_size))
+            }
+            _ => None,
+        })
+        .fold(0.0f32, f32::max)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -900,10 +1126,24 @@ fn draw_lines(
     center_x: f32,
     para_gap: f32,
     symbol_y_offset: f32,
+    bullet_radius: f32,
+    // Left edge to set a modal block flush against. `None` derives it from this
+    // block alone; the rules text passes one shared value so that lines 4+ line
+    // up with the modes above them even though they are centered in a narrower box.
+    modal_left: Option<f32>,
     pen: Pen,
     y: &mut f32,
 ) {
     let baseline_from_top = spec.baseline_from_top(font);
+
+    // A modal block is set flush left as a unit and the unit is centered, so
+    // every mode starts at the same x. Centering each line on its own, the way
+    // an ordinary Vanguard rules block is set, would leave the bullets in a
+    // ragged column and break the list.
+    let modal = lines
+        .iter()
+        .any(|l| matches!(l, WrappedLine::Tokens(line) if line.bullet || line.indent > 0.0));
+    let block_left = modal_left.unwrap_or_else(|| center_x - block_width(lines, font, spec) / 2.0);
 
     for line in lines {
         match line {
@@ -913,10 +1153,30 @@ fn draw_lines(
             WrappedLine::HardBreak => {
                 // No extra spacing — next Tokens line advances by line_height as normal.
             }
-            WrappedLine::Tokens(tokens) => {
+            WrappedLine::Tokens(Line {
+                tokens,
+                indent,
+                bullet,
+            }) => {
                 let line_w = measure_tokens(tokens, font, spec.scale, spec.symbol_size);
-                let mut x = center_x - line_w / 2.0;
+                let mut x = if modal {
+                    block_left + indent
+                } else {
+                    center_x - line_w / 2.0
+                };
                 let baseline_y = *y + baseline_from_top;
+
+                if *bullet {
+                    // Centered in the gutter, and on the middle of the
+                    // lowercase body rather than the baseline.
+                    fill_disc(
+                        canvas,
+                        block_left + indent / 2.0,
+                        baseline_y - spec.scale.y * 0.18,
+                        bullet_radius,
+                        pen,
+                    );
+                }
                 let sym_center_y = *y + spec.line_height / 2.0 + symbol_y_offset;
 
                 for token in tokens {
@@ -999,6 +1259,7 @@ mod tests {
             l.rules_width_expanded(),
             l.rules_width_narrow(),
             WIDE_LINE_LIMIT,
+            l.mode_indent,
             bigger.symbol_size,
         );
         let h = block_height(&wide, bigger.line_height, l.para_gap)
@@ -1047,10 +1308,154 @@ mod tests {
             l.rules_width(),
             l.rules_width_narrow(),
             WIDE_LINE_LIMIT,
+            l.mode_indent,
             spec.symbol_size,
         );
         assert_eq!(count_tokens(&wide), WIDE_LINE_LIMIT);
         assert!(matches!(narrow.first(), Some(WrappedLine::ParagraphBreak)));
         assert!(count_tokens(&narrow) > 0);
+    }
+
+    fn wrap(text: &str, width: f32) -> Vec<WrappedLine> {
+        let fonts = Fonts::load().unwrap();
+        let spec = TypeSpec::ability(layout::DEFAULT.ability_size, &layout::DEFAULT);
+        wrap_text_indented(
+            text,
+            &fonts.body,
+            spec.scale,
+            width,
+            layout::DEFAULT.mode_indent,
+            spec.symbol_size,
+        )
+    }
+
+    fn rendered(lines: &[WrappedLine]) -> Vec<(bool, String)> {
+        lines
+            .iter()
+            .filter_map(|l| match l {
+                WrappedLine::Tokens(line) => Some((
+                    line.bullet,
+                    line.tokens.iter().map(|t| t.to_text_repr()).collect(),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The em dash is derived from the modes below the line, not written by the
+    /// author — which is what makes the untriggered form work.
+    #[test]
+    fn a_mode_list_puts_a_dash_on_the_line_that_introduces_it() {
+        let lines = rendered(&wrap("Choose one\n* Draw a card.\n* Gain 2 life.", 460.0));
+        assert_eq!(
+            lines,
+            vec![
+                (false, "Choose one —".to_string()),
+                (true, "Draw a card.".to_string()),
+                (true, "Gain 2 life.".to_string()),
+            ]
+        );
+    }
+
+    /// …and the triggered form is the same construct with a longer introduction.
+    #[test]
+    fn a_trigger_clause_takes_the_dash_the_same_way() {
+        let lines = rendered(&wrap(
+            "At the beginning of your upkeep, choose one\n* Draw a card.\n* Gain 2 life.",
+            460.0,
+        ));
+        let header: String = lines
+            .iter()
+            .take_while(|(bullet, _)| !bullet)
+            .map(|(_, s)| s.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(header, "At the beginning of your upkeep, choose one —");
+        let modes: Vec<_> = lines.iter().filter(|(b, _)| *b).collect();
+        assert_eq!(modes.len(), 2);
+    }
+
+    /// Re-wrapping already-wrapped text (`wrap_text_split` does exactly this to
+    /// the overflow half) must not add a second dash.
+    #[test]
+    fn the_dash_is_not_added_twice() {
+        let once = "Choose one —\n* Draw a card.";
+        assert_eq!(insert_mode_dashes(once), once);
+    }
+
+    /// A mode that wraps hangs under its own text, and only its first line is
+    /// bulleted.
+    #[test]
+    fn a_wrapped_mode_hangs_under_itself() {
+        let lines = wrap(
+            "Choose one\n* Target creature gets +3/+3 and gains trample until end of turn.",
+            240.0,
+        );
+        let modes: Vec<_> = rendered(&lines);
+        assert!(modes.len() > 2, "expected the mode to wrap: {modes:?}");
+        assert!(modes[1].0, "first line of the mode carries the bullet");
+        assert!(!modes[2].0, "its continuation does not");
+
+        let indents: Vec<f32> = lines
+            .iter()
+            .filter_map(|l| match l {
+                WrappedLine::Tokens(line) => Some(line.indent),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(indents[0], 0.0);
+        assert!(indents[1] > 0.0 && indents[1] == indents[2]);
+    }
+
+    /// Nothing about an ordinary ability changes — no indent, no bullet, no dash.
+    #[test]
+    fn ordinary_text_is_untouched() {
+        let lines = wrap("During your draw phase,\ndraw an additional card.", 460.0);
+        for l in &lines {
+            if let WrappedLine::Tokens(line) = l {
+                assert!(!line.bullet);
+                assert_eq!(line.indent, 0.0);
+            }
+        }
+        assert!(!rendered(&lines).iter().any(|(_, s)| s.contains('—')));
+    }
+
+    /// A line that really does start with an asterisk escapes with `\*`.
+    #[test]
+    fn an_escaped_asterisk_is_literal_text() {
+        let lines = rendered(&wrap("\\*not a mode", 460.0));
+        assert_eq!(lines, vec![(false, "*not a mode".to_string())]);
+    }
+}
+
+#[cfg(test)]
+mod intro_tests {
+    use super::*;
+
+    /// The line that introduces a list is never inspected: the dash follows from
+    /// the modes below it, so any wording and any capitalization works, and a
+    /// count word is just text. Nothing here is a keyword.
+    #[test]
+    fn any_introduction_takes_the_dash() {
+        for intro in [
+            "Choose one",
+            "choose one",
+            "Choose two",
+            "choose two",
+            "Choose three",
+            "Choose one or both",
+            "Choose both",
+            "CHOOSE ONE",
+            "When this creature enters, choose two",
+            "At the beginning of your end step, choose one or more",
+            "Pick whichever of these you like",
+        ] {
+            let out = insert_mode_dashes(&format!("{intro}\n* A.\n* B."));
+            assert_eq!(
+                out.lines().next().unwrap(),
+                format!("{intro} —"),
+                "introduction {intro:?} did not take the dash"
+            );
+        }
     }
 }
