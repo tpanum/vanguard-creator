@@ -253,6 +253,27 @@ Vanguard metadata — `hand_modifier`, `life_modifier`, `flavor_text` — can be
 
 See **[docs/scryfall.md](docs/scryfall.md)** for the queries, the fields worth trusting, and one-liners for pulling a card's image or opening it in a browser.
 
+## The rules of Magic
+
+The Comprehensive Rules are at <https://magic.wizards.com/en/rules>, published as
+DOCX, PDF and TXT. **Consult the TXT version** — it is one flat file, so a
+question is a `grep` away, where the PDF is not searchable from the shell.
+
+The download URLs carry the release date (`.../MagicCompRules 20260619.txt`) and
+change with every rules update, so start from the landing page rather than
+hardcoding one:
+
+```sh
+curl -sSL -A vgc "https://media.wizards.com/2026/downloads/MagicCompRules%2020260619.txt" -o /tmp/cr.txt
+grep -n -i vanguard /tmp/cr.txt
+```
+
+What is relevant here lives in rule **902** (Vanguard), rule **313** (the card
+type), and rules **211.1** and **212.1**, which define the hand and life
+modifiers this tool draws in the bubbles — a signed number or a zero, printed in
+the lower left and lower right corners. Reach for it when a card's wording or a
+stat value looks wrong; it says nothing about typography or layout.
+
 ## Which face goes where
 
 - **Card name** — Fremont Regular.
