@@ -187,6 +187,44 @@ The renames are needed because output filenames come from the card name, while t
 
 Look at the result before committing. The F1 metric never sees the samples: it scores ability text only, on a blank canvas, so nothing in the suite will catch flavor text colliding with the stat bubbles, artwork cropping wrongly, or a symbol rendering at the wrong tone.
 
+## Modal abilities
+
+A line starting with `* ` is one mode of a modal ability (`src/text.rs`). Two
+decisions are load-bearing:
+
+- **The em dash is derived, never authored.** `insert_mode_dashes` appends it to
+  whatever line introduces a run of modes. That is what collapses the triggered
+  and untriggered cases into one construct: `Choose one —` and `When ~ attacks,
+  choose one —` differ only in what the author wrote, so there is no second
+  syntax for the triggered form and no way to get the dash wrong. The pass is
+  idempotent — a line already ending in `—` is left alone — because
+  `wrap_text_split` re-wraps its own reconstructed output.
+- **A modal block is set flush left as a unit, and the unit is centered.**
+  Ordinary Vanguard rules text centers every line individually; doing that to a
+  list leaves the bullets in a ragged column. `draw_lines` switches alignment
+  when any line carries an indent or a bullet.
+
+Consequences worth keeping: `—` is glued to the word before it during wrapping
+(`glue_dashes`), so it can never begin a line; `wrap_text_split` backs its split
+up to a mode's bullet so no mode straddles the width change; and the shared left
+edge is clamped to the narrow box, or a long header would push the modes into
+the stat-bubble housings. `lines_to_text` must not emit a second newline before
+a mode it has already broken for — that reads back as a paragraph break and
+opens a gap between modes that the list never asked for.
+
+The bullet is a drawn disc, not `•`, so it is the same mark at the same weight
+whatever face the rules text is in and a font missing the glyph cannot turn a
+list into a row of tofu.
+
+A modal list is also the kind of text that overflows, so the two features meet:
+`mode_indent` and `mode_bullet_radius` are measured at `ability_size` and scale
+with the type when the overflow path sets a card smaller. They are typographic
+indents, not fixed margins — held constant, a list at 16 px inside a 24 px gutter
+reads as two loose columns.
+
+None of this is visible to the accuracy suite — no original is modal — so it
+rests on the unit tests in `src/text.rs` and on looking at a rendered card.
+
 ## The gem
 
 Every original carries a glossy sphere in the bottom bezel, and it is not always the same colour. Sampling the gem disc out of all 25 scans in `tests/assets/` puts the cards into four tight clusters — blue, green, red, white — so this is a real per-card property, recorded as a **required** `color:` field in each card's YAML. `src/gem.rs` recolours it.

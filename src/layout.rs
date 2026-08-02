@@ -135,6 +135,18 @@ pub struct Layout {
     /// Vertical nudge of inline mana symbols, in pixels, positive = down.
     /// Symbols are otherwise centered on the line box.
     pub symbol_y_offset: f32,
+    /// Left inset (px) of a mode's text from the left edge of the rules block,
+    /// for modal abilities (`Choose one —` followed by bulleted modes). The
+    /// bullet sits in this gutter and a mode that wraps hangs under its own
+    /// text, not under its bullet.
+    ///
+    /// Measured at `ability_size`, and scaled with the type when overflowing
+    /// text is set smaller — the indent is typographic, not a fixed margin, so
+    /// a list at 16 px with a 24 px gutter reads as two loose columns.
+    pub mode_indent: f32,
+    /// Radius (px) of the disc drawn as a mode bullet, at `ability_size`.
+    /// Scaled with the type for the same reason as `mode_indent`.
+    pub mode_bullet_radius: f32,
     /// Center of the coloured gem set into the bottom bezel.
     pub gem_center: (f32, f32),
     /// Radius of the gem sphere, in pixels. Recolouring fades out over the
@@ -199,6 +211,8 @@ pub const DEFAULT: Layout = Layout {
     ink_gain: 0.87,
     symbol_scale: 0.95,
     symbol_y_offset: 1.0,
+    mode_indent: 20.0,
+    mode_bullet_radius: 2.6,
     gem_center: (361.5, 955.5),
     gem_radius: 16.5,
 };
