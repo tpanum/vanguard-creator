@@ -176,10 +176,10 @@ fn knobs() -> Vec<Knob> {
             step: 0.025,
         },
         Knob {
-            name: "rules_min_y",
+            name: "rules_normal_height",
             elements: RULES,
-            get: |l| l.rules_min_y as f64,
-            set: |l, v| l.rules_min_y = v as f32,
+            get: |l| l.rules_normal_height as f64,
+            set: |l, v| l.rules_normal_height = v as f32,
             span: 20.0,
             step: 2.0,
         },

@@ -175,7 +175,7 @@ fn glue_dashes(para: &str) -> Vec<String> {
     words
 }
 
-fn wrap_paragraph(
+fn wrap_greedy(
     para: &str,
     font: &FontRef,
     scale: PxScale,
@@ -217,6 +217,72 @@ fn wrap_paragraph(
     }
     lines
 }
+
+/// Wrap one paragraph, pulling words down off the penultimate line when the
+/// greedy wrap would leave a stub on the last one.
+///
+/// Greedy wrapping fills each line to the measure and lets the remainder fall
+/// where it may, which on a centered card leaves a full line followed by
+/// `flash.` — 12% of the measure, and it reads as a mistake. The 1997 cards were
+/// broken by hand and do not do this: Sidar Kondo breaks after `+3/+3` with room
+/// to spare on the line.
+///
+/// The fix narrows the measure and re-wraps, keeping the widest setting whose
+/// last line clears `widow_min_fraction`. **The line count is never allowed to
+/// change**, which is what makes this safe to drop into the middle of the
+/// pipeline: block height, the size search, the overflow decision and vertical
+/// placement all key off the number of lines, so only the break points move. If
+/// no narrower measure helps, the greedy wrap stands — this can only improve a
+/// paragraph or leave it alone.
+///
+/// No original reaches this code: all 25 carry their printed breaks as `\n` or
+/// are a single line, so none of them auto-wraps at all.
+fn wrap_paragraph(
+    para: &str,
+    font: &FontRef,
+    scale: PxScale,
+    max_width: f32,
+    symbol_size: u32,
+    layout: &Layout,
+) -> Vec<Vec<Token>> {
+    let lines = wrap_greedy(para, font, scale, max_width, symbol_size);
+
+    let last_width = |lines: &[Vec<Token>]| {
+        lines
+            .last()
+            .map(|l| measure_tokens(l, font, scale, symbol_size))
+            .unwrap_or(0.0)
+    };
+
+    let target = max_width * layout.widow_min_fraction;
+    if lines.len() < 2 || last_width(&lines) >= target {
+        return lines;
+    }
+
+    // Narrow the measure a step at a time and keep the first setting that fixes
+    // the stub without costing a line.
+    let mut width = max_width;
+    while width > max_width * MIN_WIDOW_MEASURE {
+        width -= WIDOW_STEP;
+        let candidate = wrap_greedy(para, font, scale, width, symbol_size);
+        if candidate.len() != lines.len() {
+            break;
+        }
+        if last_width(&candidate) >= target {
+            return candidate;
+        }
+    }
+
+    lines
+}
+
+/// Step by which the measure is narrowed while hunting for a wrap without a
+/// stub on the last line.
+const WIDOW_STEP: f32 = 4.0;
+
+/// Floor on that hunt, as a fraction of the measure: past this a paragraph is
+/// so narrow it reads as a column, which is worse than the stub it fixes.
+const MIN_WIDOW_MEASURE: f32 = 0.55;
 
 // ── Modal abilities ───────────────────────────────────────────────────────────
 
@@ -295,8 +361,9 @@ pub fn wrap_text(
     scale: PxScale,
     max_width: f32,
     symbol_size: u32,
+    layout: &Layout,
 ) -> Vec<WrappedLine> {
-    wrap_text_indented(text, font, scale, max_width, 0.0, symbol_size)
+    wrap_text_indented(text, font, scale, max_width, 0.0, symbol_size, layout)
 }
 
 /// `wrap_text` with the mode indent supplied. Zero disables the indent (and so
@@ -308,6 +375,7 @@ pub fn wrap_text_indented(
     max_width: f32,
     mode_indent: f32,
     symbol_size: u32,
+    layout: &Layout,
 ) -> Vec<WrappedLine> {
     let text = insert_mode_dashes(text);
     let mut all_lines: Vec<WrappedLine> = Vec::new();
@@ -339,7 +407,8 @@ pub fn wrap_text_indented(
             first_chunk = false;
 
             let indent = if mode { mode_indent } else { 0.0 };
-            let wrapped = wrap_paragraph(&chunk, font, scale, max_width - indent, symbol_size);
+            let wrapped =
+                wrap_paragraph(&chunk, font, scale, max_width - indent, symbol_size, layout);
             for (i, tokens) in wrapped.into_iter().enumerate() {
                 all_lines.push(WrappedLine::Tokens(Line {
                     tokens,
@@ -409,8 +478,17 @@ pub fn wrap_text_split(
     wide_limit: usize,
     mode_indent: f32,
     symbol_size: u32,
+    layout: &Layout,
 ) -> (Vec<WrappedLine>, Vec<WrappedLine>) {
-    let all = wrap_text_indented(text, font, scale, wide_max_width, mode_indent, symbol_size);
+    let all = wrap_text_indented(
+        text,
+        font,
+        scale,
+        wide_max_width,
+        mode_indent,
+        symbol_size,
+        layout,
+    );
 
     // Count visible content lines (Tokens) plus paragraph separators.
     let total: usize = all
@@ -469,6 +547,7 @@ pub fn wrap_text_split(
             narrow_max_width,
             mode_indent,
             symbol_size,
+            layout,
         )
     };
     if boundary_break && !narrow_lines.is_empty() {
@@ -558,6 +637,7 @@ pub fn fit_rules_text(
             WIDE_LINE_LIMIT,
             mode_indent,
             spec.symbol_size,
+            layout,
         );
         let (wide, narrow) = if narrow.is_empty() {
             (wide, narrow)
@@ -571,6 +651,7 @@ pub fn fit_rules_text(
                 WIDE_LINE_LIMIT,
                 mode_indent,
                 spec.symbol_size,
+                layout,
             )
         };
         let height = block_height(&wide, spec.line_height, layout.para_gap)
@@ -581,7 +662,7 @@ pub fn fit_rules_text(
     // Full size, normal box. Every original lands here and is untouched by
     // everything below.
     let full = wrap_at(layout.ability_size);
-    let overflow = full.3 > layout.pushup_free_height();
+    let overflow = full.3 > layout.rules_normal_height;
 
     // Overflowing text gets the lower strip of parchment and, if that is still
     // not enough, the largest size that fits it.
@@ -622,6 +703,7 @@ pub fn fit_rules_text(
                 spec.scale,
                 layout.rules_width_narrow(),
                 spec.symbol_size,
+                layout,
             );
             FlavorFit { spec, lines }
         };
@@ -969,48 +1051,43 @@ pub fn draw_text_centered_on_baseline(
 
 // ── Rules text block rendering ────────────────────────────────────────────────
 
+/// Top of the ability block, for a fitted block of any height.
+///
+/// One rule for every block, overflowing or not.
+///
+/// Every original centres its ability on y ≈ 701: one line spans 688–714, two
+/// 675–728, three 659–741 — the same middle, growing both ways.
+///
+/// Kept up, that centring walks a taller block off the top of the parchment: the
+/// tallest original is 90 px, and a custom card's 120 px block put its first line
+/// on the panel's top border. So the top pins where a 90 px block starts and the
+/// block grows downward from there. That also keeps full-width lines clear of the
+/// stat-bubble housings without a second rule — the wide portion is at most three
+/// lines, and 656 + 90 = 746, above the narrowing at 754 — and it gives every long
+/// card the same top margin, which centring in the parchment did not: a block that
+/// happened to be short enough to centre sat 20 px lower than one that did not.
+///
+/// Only a block too tall to fit below the anchor is pushed back up, and no further
+/// than the top of the parchment.
+pub fn rules_block_top(fit: &RulesFit, layout: &Layout) -> f32 {
+    let ability_h = block_height(&fit.lines, fit.spec.line_height, layout.para_gap)
+        + block_height(&fit.narrow_lines, fit.spec.line_height, layout.para_gap);
+
+    let center = layout.text_box.top as f32 + layout.rules_centering_height / 2.0;
+    let top_anchor = center - layout.rules_calibrated_height / 2.0;
+
+    (center - ability_h / 2.0)
+        .max(top_anchor)
+        .min(layout.rules_overflow_bottom - ability_h)
+        .max(layout.rules_overflow_top)
+}
+
 /// Render the full rules text block onto the canvas.
 ///
 /// Ability lines 1-3 are drawn centered in `layout.text_box`; lines 4+ (if
 /// any) are drawn centered in `layout.narrow_text_box` to stay clear of the
 /// stat-bubble frames. Flavor text follows after the separator using the same
 /// centering as the last ability line.
-/// Blank space between the ability block's line boxes and the ink inside them:
-/// leading above the first line's tallest glyph, and descent below the last
-/// line's lowest. Subtracting these is what makes a margin measured from the
-/// parchment edge agree with what the eye sees.
-fn ink_padding(fit: &RulesFit, font: &FontRef) -> (f32, f32) {
-    let text_of = |line: &WrappedLine| match line {
-        WrappedLine::Tokens(line) => Some(
-            line.tokens
-                .iter()
-                .map(|t| t.to_text_repr())
-                .collect::<String>(),
-        ),
-        _ => None,
-    };
-    let visible = || {
-        fit.lines
-            .iter()
-            .chain(fit.narrow_lines.iter())
-            .filter_map(text_of)
-    };
-
-    let baseline = fit.spec.baseline_from_top(font);
-    let run = Run::new(fit.spec.scale);
-    let bounds = |text: Option<String>| text.and_then(|t| ink_bounds(&t, font, run));
-
-    // A line of symbols only has no outlined glyphs; fall back to no padding.
-    let pad_top = bounds(visible().next())
-        .map(|(_, y0, _, _)| (baseline + y0).max(0.0))
-        .unwrap_or(0.0);
-    let pad_bottom = bounds(visible().next_back())
-        .map(|(_, _, _, y1)| (fit.spec.line_height - (baseline + y1)).max(0.0))
-        .unwrap_or(0.0);
-
-    (pad_top, pad_bottom)
-}
-
 pub fn draw_rules_text(
     canvas: &mut RgbaImage,
     fit: &RulesFit,
@@ -1022,31 +1099,10 @@ pub fn draw_rules_text(
     let center_x = layout.text_box.center_x();
     let narrow_center_x = layout.narrow_text_box.center_x();
 
-    let ability_h = block_height(&fit.lines, fit.spec.line_height, layout.para_gap)
-        + block_height(&fit.narrow_lines, fit.spec.line_height, layout.para_gap);
-
     // The bullet follows the type down with the indent it sits in.
     let bullet_radius = layout.mode_bullet_radius * fit.spec.scale.y / layout.ability_size as f32;
 
-    // Short blocks: center within the calibrated centering region.
-    // Tall blocks that exceed that region: center within the full text box.
-    // y_start is floored at rules_min_y so long blocks never drift above it.
-    let mut y = if fit.overflow {
-        // Overflow text is placed in the parchment it actually occupies, which
-        // reaches below text_box.bottom, and is balanced on its ink rather than
-        // on its line boxes — see `rules_overflow_top_share`.
-        let (pad_top, pad_bottom) = ink_padding(fit, font);
-        let ink_h = (ability_h - pad_top - pad_bottom).max(0.0);
-        let free = (layout.overflow_height() - ink_h).max(0.0);
-        layout.rules_overflow_top + free * layout.rules_overflow_top_share - pad_top
-    } else {
-        let offset = if ability_h <= layout.rules_centering_height {
-            (layout.rules_centering_height - ability_h) / 2.0
-        } else {
-            ((layout.text_box.height() - ability_h) / 2.0).max(0.0)
-        };
-        (layout.text_box.top as f32 + offset).max(layout.rules_min_y)
-    };
+    let mut y = rules_block_top(fit, layout);
 
     // A modal ability is one list even when it spills into the narrow box, so
     // both halves are set flush against a single left edge: the widest line of
@@ -1307,6 +1363,7 @@ mod tests {
             WIDE_LINE_LIMIT,
             l.mode_indent,
             bigger.symbol_size,
+            l,
         );
         let h = block_height(&wide, bigger.line_height, l.para_gap)
             + block_height(&narrow, bigger.line_height, l.para_gap);
@@ -1316,22 +1373,21 @@ mod tests {
     #[test]
     fn overflow_text_fits_the_parchment() {
         let fit = fit(CUSTOM);
-        let fonts = Fonts::load().unwrap();
         let l = &layout::DEFAULT;
         let h = block_height(&fit.lines, fit.spec.line_height, l.para_gap)
             + block_height(&fit.narrow_lines, fit.spec.line_height, l.para_gap);
         assert!(h <= l.overflow_height(), "block {h} exceeds parchment");
 
-        // And its ink is balanced within it, rather than its line boxes.
-        let (pad_top, pad_bottom) = ink_padding(&fit, &fonts.body);
-        assert!(pad_top > 0.0 && pad_bottom > 0.0);
-        let ink_h = h - pad_top - pad_bottom;
-        let free = l.overflow_height() - ink_h;
-        let top = free * l.rules_overflow_top_share;
+        // And it starts at the same place a long block always starts: the top
+        // anchor, which is where the tallest original's block begins. Only a
+        // block too deep to fit below it is pushed back up.
+        let anchor = l.text_box.top as f32 + l.rules_centering_height / 2.0
+            - l.rules_calibrated_height / 2.0;
+        let expected = anchor.min(l.rules_overflow_bottom - h);
+        let y = rules_block_top(&fit, l);
         assert!(
-            (top - (free - top)).abs() <= 1.0,
-            "ink margins {top} / {} are not balanced",
-            free - top
+            (y - expected).abs() < 0.5,
+            "block top {y} is not the anchor {expected}"
         );
     }
 
@@ -1389,6 +1445,7 @@ mod tests {
             WIDE_LINE_LIMIT,
             l.mode_indent,
             spec.symbol_size,
+            l,
         );
         assert_eq!(count_tokens(&wide), WIDE_LINE_LIMIT);
         assert!(matches!(narrow.first(), Some(WrappedLine::ParagraphBreak)));
@@ -1405,6 +1462,7 @@ mod tests {
             width,
             layout::DEFAULT.mode_indent,
             spec.symbol_size,
+            &layout::DEFAULT,
         )
     }
 

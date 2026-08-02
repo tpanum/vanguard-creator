@@ -193,7 +193,7 @@ impl Element {
             Element::Title => ("name_center.0", "name_center.1"),
             Element::Rules => (
                 "text_box.left/right",
-                "rules_min_y / rules_centering_height",
+                "rules_centering_height / rules_calibrated_height",
             ),
             Element::LeftBubble => ("hand_center.0", "hand_center.1"),
             Element::RightBubble => ("life_center.0", "life_center.1"),
