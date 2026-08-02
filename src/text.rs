@@ -353,6 +353,8 @@ pub struct RulesFit {
     /// The text did not fit the normal box at full size, so it is set in the
     /// extended parchment region and centered there instead.
     pub overflow: bool,
+    /// Height of the ability block as fitted, in pixels.
+    pub height: f32,
 }
 
 fn block_height(lines: &[WrappedLine], line_height: f32, para_gap: f32) -> f32 {
@@ -441,13 +443,6 @@ pub fn fit_rules_text(
     };
 
     let size = spec.scale.x as u32;
-    if ability_h > layout.overflow_height() {
-        eprintln!(
-            "warning: ability text block ({ability_h:.0}px) does not fit the parchment \
-             ({:.0}px) even at the minimum size {size} — it will run past the bottom banner",
-            layout.overflow_height()
-        );
-    }
     let total_lines = count_tokens(&lines) + count_tokens(&narrow_lines);
     if total_lines > layout.max_ability_lines {
         eprintln!("note: ability text wraps to {total_lines} lines at size {size}");
@@ -490,7 +485,58 @@ pub fn fit_rules_text(
         narrow_lines,
         flavor,
         overflow,
+        height: ability_h,
     }
+}
+
+/// Whether a fitted block still runs past the bottom of the parchment.
+///
+/// Reaching here means the size search bottomed out at `ability_size_min` and
+/// the text is *still* too tall. Nothing further can be done to it: the only
+/// remaining moves are to set it smaller than a size anyone can read, or to draw
+/// it over the bottom banner. Callers must refuse the card.
+impl RulesFit {
+    pub fn overflows_parchment(&self, layout: &Layout) -> bool {
+        self.height > layout.overflow_height()
+    }
+}
+
+/// Refuse ability text that cannot be rendered inside the parchment.
+///
+/// Checked before anything is drawn, so an over-long card fails instead of
+/// silently writing a PNG with its last lines across the bottom banner.
+pub fn check_rules_fit(
+    ability: &str,
+    flavor: Option<&str>,
+    font: &FontRef,
+    flavor_font: &FontRef,
+    layout: &Layout,
+) -> Result<(), String> {
+    let chars = ability.chars().count();
+    if chars > layout.ability_chars_max {
+        return Err(format!(
+            "ability text is too long: {chars} characters, limit {}. Text this long \
+             only fits by shrinking the type below what the card can carry legibly.",
+            layout.ability_chars_max
+        ));
+    }
+
+    // The character limit is a readability judgement and counts characters, not
+    // ink. Line breaks, long words and mana symbols all set wider than average,
+    // so a card under the limit can still overrun the parchment; this is the
+    // backstop that catches it.
+    let fit = fit_rules_text(ability, flavor, font, flavor_font, layout);
+    if !fit.overflows_parchment(layout) {
+        return Ok(());
+    }
+    Err(format!(
+        "ability text does not fit: {chars} characters wrap to {} lines at the minimum \
+         size {}, a {:.0}px block against {:.0}px of parchment",
+        count_tokens(&fit.lines) + count_tokens(&fit.narrow_lines),
+        layout.ability_size_min,
+        fit.height,
+        layout.overflow_height(),
+    ))
 }
 
 /// Compute the horizontal stretch/shrink for a card name.
@@ -1026,6 +1072,39 @@ mod tests {
             "ink margins {top} / {} are not balanced",
             free - top
         );
+    }
+
+    fn check(ability: &str) -> Result<(), String> {
+        let fonts = Fonts::load().unwrap();
+        check_rules_fit(ability, None, &fonts.body, &fonts.body, &layout::DEFAULT)
+    }
+
+    #[test]
+    fn text_within_the_limits_is_accepted() {
+        assert!(check(ORIGINAL).is_ok());
+        // The longest real custom card in ../bug-vanguards, 366 characters.
+        assert!(check(CUSTOM).is_ok());
+    }
+
+    #[test]
+    fn text_over_the_character_limit_is_refused() {
+        let long = "Draw a card and you gain 2 life. ".repeat(40);
+        assert!(long.chars().count() > layout::DEFAULT.ability_chars_max);
+        let err = check(&long).unwrap_err();
+        assert!(err.contains("too long"), "{err}");
+    }
+
+    /// The character limit counts characters, not ink, so it cannot be the only
+    /// guard: this card is well under it and still cannot be set.
+    #[test]
+    fn short_text_that_still_does_not_fit_is_refused() {
+        let paragraphs = (0..14)
+            .map(|i| format!("Draw a card {i}."))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        assert!(paragraphs.chars().count() < layout::DEFAULT.ability_chars_max);
+        let err = check(&paragraphs).unwrap_err();
+        assert!(err.contains("does not fit"), "{err}");
     }
 
     #[test]

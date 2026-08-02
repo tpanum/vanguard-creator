@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::OnceLock;
 
+use crate::fonts::Fonts;
 use crate::gem::Gem;
+use crate::layout;
+use crate::text;
 
 static STAT_RE: OnceLock<Regex> = OnceLock::new();
 fn stat_re() -> &'static Regex {
@@ -156,6 +159,27 @@ pub fn validate_file(yaml_path: &Path) -> Vec<ValidationIssue> {
                 }
             }
             None => issue("invalid 'color' value: expected a string".to_owned()),
+        }
+    }
+
+    // Ability text that cannot be set inside the parchment is a defect in the
+    // card, so `validate` reports it rather than leaving `create` to be the
+    // first thing that says so.
+    if let Some(ability) = data.get("ability").and_then(|v| v.as_str()) {
+        let flavor = data.get("flavor").and_then(|v| v.as_str());
+        match Fonts::load() {
+            Ok(fonts) => {
+                if let Err(msg) = text::check_rules_fit(
+                    ability,
+                    flavor,
+                    &fonts.body,
+                    &fonts.body,
+                    &layout::DEFAULT,
+                ) {
+                    issue(msg);
+                }
+            }
+            Err(e) => issue(format!("cannot check ability text: {e:#}")),
         }
     }
 
