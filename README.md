@@ -148,7 +148,7 @@ artwork: "artwork/goblin-king.png"
 | Field | Required | Description |
 |---|---|---|
 | `name` | yes | Card name displayed in the title banner. |
-| `ability` | yes | Rules text. Supports `{X}` mana notation and paragraph breaks via newlines. |
+| `ability` | yes | Rules text. Supports `{X}` mana notation, paragraph breaks via newlines, and `* ` at the start of a line for a [modal ability](#modal-abilities). |
 | `hand` | yes | Starting hand size modifier (e.g. `+1`, `-2`, `+0`). One or two digits. |
 | `life` | yes | Starting life modifier (e.g. `+3`, `+12`, `-8`). One or two digits. |
 | `color` | yes | Colour of the gem in the bottom bezel: `white`, `blue`, `black`, `red` or `green`, or the Magic letter `w` `u` `b` `r` `g`, in any casing. A pair such as `wu` or `white/blue` grades the two colours into each other across the sphere, left to right. Note this does *not* follow the card's Magic colour identity — Serra's gem is green and Volrath's is white. |
@@ -228,17 +228,26 @@ ability: |-
   * You gain 2 life.
 ```
 
-Anything can introduce a list this way — `Choose two`, `Choose one or both`,
-`Choose one. If you control a Sliver, choose both instead` — because the dash is
-derived from the modes below rather than written out. Do not type the `—`
-yourself; if you do, it is left as-is rather than doubled.
+Anything can introduce a list this way — `Choose two`, `choose one or both`,
+`Choose one. If you control a Sliver, choose both instead` — in any casing,
+because the introducing line is never parsed. Nothing is a keyword: the dash
+follows from the modes below it. That also means the count is not checked, so
+`choose two` over a list of two modes renders happily; that is yours to get
+right.
 
-A mode that is too long to fit wraps under its own text, not under its bullet,
-and only its first line is bulleted. A modal block is set flush left as a unit
-and that unit is centered, so the bullets stay in one column even when the list
-runs past line 3 into the narrower space between the stat bubbles.
+Points worth knowing when writing modes:
 
-To begin a line with a literal asterisk, escape it: `\*`.
+- **Type the text exactly as it should read.** Nothing is added but the dash — a
+  mode with no full stop renders without one, and an `—` you write yourself is
+  left alone rather than doubled.
+- A mode too long for one line wraps under its own text, not under its bullet,
+  and only its first line is bulleted.
+- A modal block is set flush left as a unit and that unit is centered, so the
+  bullets stay in one column even when the list runs past line 3 into the
+  narrower space between the stat bubbles.
+- Long lists are fine: a block that will not fit is set smaller, and the bullets
+  and indent come down with the type.
+- To begin a line with a literal asterisk, escape it: `\*`.
 
 ## Assets
 
