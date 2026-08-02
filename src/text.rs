@@ -655,6 +655,15 @@ fn count_tokens(lines: &[WrappedLine]) -> usize {
         .count()
 }
 
+/// Does this run of lines contain a mode? A modal block is set flush left as a
+/// unit, which is what makes its horizontal placement different from ordinary
+/// centered rules text.
+fn is_modal(lines: &[WrappedLine]) -> bool {
+    lines
+        .iter()
+        .any(|l| matches!(l, WrappedLine::Tokens(line) if line.bullet || line.indent > 0.0))
+}
+
 /// Fit ability and flavor text within the layout's text box.
 ///
 /// Ability text is always rendered at `layout.ability_size` — there is no
@@ -690,6 +699,24 @@ pub fn fit_rules_text(
         );
         let (wide, narrow) = if narrow.is_empty() {
             (wide, narrow)
+        } else if is_modal(&wide) || is_modal(&narrow) {
+            // A modal block that spills is still one list set against one left
+            // edge, and that edge has to clear the stat-bubble housings — so the
+            // whole block lives in the narrow column and must be measured for
+            // it. Wrapped to the full width, an intro line long enough could
+            // start at the clamped edge and run off the right of the box, where
+            // the frame clipped it (Hyeena by 45px, Eric by 23px).
+            wrap_text_split(
+                ability,
+                font,
+                spec.scale,
+                layout.rules_width_narrow(),
+                layout.rules_width_narrow(),
+                WIDE_LINE_LIMIT,
+                mode_indent,
+                spec.symbol_size,
+                layout,
+            )
         } else {
             wrap_text_split(
                 ability,
@@ -1171,6 +1198,16 @@ pub fn draw_rules_text(
             (narrow_center_x - wide_w.max(narrow_w) / 2.0).clamp(lo, hi.max(lo))
         }
     };
+    let modal = is_modal(&fit.lines) || is_modal(&fit.narrow_lines);
+    warn_if_outside_box(
+        fit,
+        font,
+        layout,
+        center_x,
+        narrow_center_x,
+        modal_left,
+        modal,
+    );
     let modal_left = Some(modal_left);
 
     // Ability lines 1-3 (full-width centering)
@@ -1184,6 +1221,7 @@ pub fn draw_rules_text(
         layout.symbol_y_offset,
         bullet_radius,
         modal_left,
+        modal,
         pen,
         &mut y,
     );
@@ -1199,6 +1237,7 @@ pub fn draw_rules_text(
         layout.symbol_y_offset,
         bullet_radius,
         modal_left,
+        modal,
         pen,
         &mut y,
     );
@@ -1222,6 +1261,7 @@ pub fn draw_rules_text(
             layout.symbol_y_offset,
             layout.mode_bullet_radius,
             None,
+            false,
             pen,
             &mut y,
         );
@@ -1268,6 +1308,93 @@ fn block_width(lines: &[WrappedLine], font: &FontRef, spec: &TypeSpec) -> f32 {
         .fold(0.0f32, f32::max)
 }
 
+/// Rightmost and leftmost x a half of the block will actually be drawn at.
+///
+/// Mirrors the placement in `draw_lines`: a half containing any mode is set
+/// flush against `block_left`, everything else is centered line by line.
+fn half_extent(
+    lines: &[WrappedLine],
+    font: &FontRef,
+    spec: &TypeSpec,
+    center_x: f32,
+    block_left: f32,
+    modal: bool,
+) -> Option<(f32, f32)> {
+    lines
+        .iter()
+        .filter_map(|l| match l {
+            WrappedLine::Tokens(line) => {
+                let w = measure_tokens(&line.tokens, font, spec.scale, spec.symbol_size);
+                let x = if modal {
+                    block_left + line.indent
+                } else {
+                    center_x - w / 2.0
+                };
+                Some((x, x + w))
+            }
+            _ => None,
+        })
+        .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)))
+}
+
+/// Warn about ability text that will be drawn outside the panel.
+///
+/// A modal block is set flush against one left edge so its intro and its
+/// bullets line up. When the block spills into the narrow column that edge is
+/// clamped to clear the stat-bubble housings — but the upper half was wrapped to
+/// the *full* measure, so a long intro line can start at the clamped edge and
+/// run off the right of the box, where the frame clips it. Nothing else in the
+/// pipeline notices: the line is inside its measure, it is only in the wrong
+/// place.
+fn warn_if_outside_box(
+    fit: &RulesFit,
+    font: &FontRef,
+    layout: &Layout,
+    center_x: f32,
+    narrow_center_x: f32,
+    block_left: f32,
+    modal: bool,
+) {
+    // Measured against the box itself, not the padded measure: the padding is a
+    // margin the wrap aims for, and a line landing a pixel over it is invisible.
+    // What this warning is for is text drawn outside the panel, where the frame
+    // clips it.
+    let halves = [
+        (
+            &fit.lines,
+            center_x,
+            layout.text_box.left as f32,
+            layout.text_box.right as f32,
+        ),
+        (
+            &fit.narrow_lines,
+            narrow_center_x,
+            layout.narrow_text_box.left as f32,
+            layout.narrow_text_box.right as f32,
+        ),
+    ];
+
+    for (lines, cx, lo, hi) in halves {
+        let Some((left, right)) = half_extent(lines, font, &fit.spec, cx, block_left, modal) else {
+            continue;
+        };
+        if right > hi + 0.5 {
+            eprintln!(
+                "warning: ability text runs {:.0}px past the right of the box \
+                 (reaches x {right:.0}, limit {hi:.0}) — it will be clipped by the frame",
+                right - hi
+            );
+        }
+        if left < lo - 0.5 {
+            eprintln!(
+                "warning: ability text runs {:.0}px past the left of the box \
+                 (reaches x {left:.0}, limit {lo:.0}) — it will be clipped by the frame",
+                lo - left
+            );
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_lines(
     canvas: &mut RgbaImage,
@@ -1282,6 +1409,7 @@ fn draw_lines(
     // block alone; the rules text passes one shared value so that lines 4+ line
     // up with the modes above them even though they are centered in a narrower box.
     modal_left: Option<f32>,
+    modal: bool,
     pen: Pen,
     y: &mut f32,
 ) {
@@ -1291,9 +1419,11 @@ fn draw_lines(
     // every mode starts at the same x. Centering each line on its own, the way
     // an ordinary Vanguard rules block is set, would leave the bullets in a
     // ragged column and break the list.
-    let modal = lines
-        .iter()
-        .any(|l| matches!(l, WrappedLine::Tokens(line) if line.bullet || line.indent > 0.0));
+    //
+    // `modal` is decided for the whole block by the caller, not per half: an
+    // intro line long enough to wrap across the wide/narrow boundary would
+    // otherwise be centered above modes that are flush left, which reads as two
+    // different paragraphs.
     let block_left = modal_left.unwrap_or_else(|| center_x - block_width(lines, font, spec) / 2.0);
 
     for line in lines {
