@@ -124,9 +124,7 @@ pub fn run(
             image::imageops::overlay(&mut page, img, offset_x as i64, offset_y as i64);
 
             if cut_lines {
-                draw_cut_lines(
-                    &mut page, cell_x, cell_y, cell_w, cell_h, margin_px, page_w_px, page_h_px,
-                );
+                draw_crop_marks(&mut page, offset_x, offset_y, img.width(), img.height());
             }
         }
 
@@ -159,31 +157,49 @@ pub fn run(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_cut_lines(
-    page: &mut RgbaImage,
-    cell_x: i32,
-    cell_y: i32,
-    cell_w: u32,
-    cell_h: u32,
-    _margin: i32,
-    page_w: u32,
-    page_h: u32,
-) {
-    let line_color = Rgba([180u8, 180, 180, 255]);
+/// Distance a crop mark keeps clear of the card, and how far it then runs, in
+/// millimetres. Together they must stay inside half the gutter, or two adjacent
+/// cards' marks meet in the middle of it.
+const CROP_MARK_GAP_MM: f32 = 0.5;
+const CROP_MARK_LEN_MM: f32 = 2.0;
 
-    // Vertical lines at left and right cell edges
-    for dx in [0i32, cell_w as i32] {
-        let x = (cell_x + dx).clamp(0, page_w as i32 - 1) as u32;
-        for y in 0..page_h {
-            page.put_pixel(x, y, line_color);
+/// Draw crop marks around one placed card.
+///
+/// The marks are hung off the *card*, not the cell it was centered in: the two
+/// differ whenever the card's proportions do not match the cell's, and on A4 at
+/// 3x3 that left the horizontal lines 1.7mm away from the edge they claimed to
+/// mark. Cutting on them would have left a white strip on every card.
+///
+/// They are also marks rather than rules. Full-page lines crossed the
+/// neighbouring cards, printing over artwork that is not waste; a mark stops
+/// short of the card it belongs to and runs outward into the gutter, which is.
+fn draw_crop_marks(page: &mut RgbaImage, x: i32, y: i32, w: u32, h: u32) {
+    let color = Rgba([120u8, 120, 120, 255]);
+    let gap = mm_to_px(CROP_MARK_GAP_MM) as i32;
+    let len = mm_to_px(CROP_MARK_LEN_MM) as i32;
+    let (pw, ph) = (page.width() as i32, page.height() as i32);
+
+    let mut plot = |px: i32, py: i32| {
+        if (0..pw).contains(&px) && (0..ph).contains(&py) {
+            page.put_pixel(px as u32, py as u32, color);
+        }
+    };
+
+    let (x0, y0) = (x, y);
+    let (x1, y1) = (x + w as i32 - 1, y + h as i32 - 1);
+
+    // Two marks per corner: one reaching out sideways from the trim edge, one
+    // reaching out vertically, so the cut line through either is unambiguous.
+    for &edge_y in &[y0, y1] {
+        for d in 0..len {
+            plot(x0 - gap - d, edge_y);
+            plot(x1 + gap + d, edge_y);
         }
     }
-
-    // Horizontal lines at top and bottom cell edges
-    for dy in [0i32, cell_h as i32] {
-        let y = (cell_y + dy).clamp(0, page_h as i32 - 1) as u32;
-        for x in 0..page_w {
-            page.put_pixel(x, y, line_color);
+    for &edge_x in &[x0, x1] {
+        for d in 0..len {
+            plot(edge_x, y0 - gap - d);
+            plot(edge_x, y1 + gap + d);
         }
     }
 }
@@ -193,9 +209,17 @@ fn draw_cut_lines(
 fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
     use std::io::Write;
 
-    // Object layout: catalog=1, pages=2, (page_i=3+2*i, xobj=4+2*i)...
+    // Object layout: catalog=1, pages=2, then three objects per page —
+    // (page_i=3+3*i, contents=4+3*i, xobj=5+3*i) — then the info dictionary.
+    //
+    // The content stream is an object of its own because a Page is a
+    // dictionary: it cannot carry `stream`/`endstream`, and `/Contents` has to
+    // be an indirect reference. Inlining it produced a file whose pages strict
+    // readers refuse — poppler reported "Bad /Length attribute in stream" and
+    // rendered nothing.
     let pages_dict_id = 2;
     let first_page_obj = 3;
+    let objs_per_page = 3;
 
     // Encode each page as JPEG
     let mut jpeg_bufs: Vec<Vec<u8>> = Vec::new();
@@ -240,7 +264,7 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
 
     // Object 2: Pages dictionary — kids listed by id
     let page_ids_str: String = (0..n)
-        .map(|i| format!("{} 0 R", first_page_obj + i * 2))
+        .map(|i| format!("{} 0 R", first_page_obj + i * objs_per_page))
         .collect::<Vec<_>>()
         .join(" ");
     write_obj!(
@@ -249,8 +273,9 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
     );
 
     for (i, (page, jpeg)) in pages.iter().zip(jpeg_bufs.iter()).enumerate() {
-        let page_obj_id = first_page_obj + i * 2;
-        let xobj_id = page_obj_id + 1;
+        let page_obj_id = first_page_obj + i * objs_per_page;
+        let contents_id = page_obj_id + 1;
+        let xobj_id = page_obj_id + 2;
 
         let pw = page.width();
         let ph = page.height();
@@ -267,10 +292,17 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
                 "<< /Type /Page /Parent 2 0 R \
                  /MediaBox [0 0 {:.2} {:.2}] \
                  /Resources << /XObject << /Im0 {} 0 R >> >> \
-                 /Contents << /Length {} >> >>\nstream\n{}\nendstream",
-                pt_w,
-                pt_h,
-                xobj_id,
+                 /Contents {} 0 R >>",
+                pt_w, pt_h, xobj_id, contents_id,
+            )
+            .as_bytes()
+        );
+
+        // Content stream, as its own object
+        write_obj!(
+            contents_id,
+            format!(
+                "<< /Length {} >>\nstream\n{}\nendstream",
                 page_stream.len(),
                 page_stream,
             )
@@ -297,7 +329,7 @@ fn save_as_pdf(pages: &[RgbaImage], output: &Path) -> Result<()> {
 
     // Document info — records the generator version, mirroring the EXIF
     // `Software` tag embedded in raster output.
-    let info_id = first_page_obj + n * 2;
+    let info_id = first_page_obj + n * objs_per_page;
     write_obj!(
         info_id,
         format!(
