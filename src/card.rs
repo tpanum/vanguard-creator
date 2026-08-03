@@ -56,6 +56,18 @@ pub struct CardDef {
     /// the card that nothing else can be derived from, and defaulting it
     /// silently renders the wrong gem rather than saying so.
     pub color: Gem,
+    /// The credit line set in the bottom bezel, printed exactly as written —
+    /// `Illus. Douglas Shuler`, as the originals do it, is what a card says,
+    /// not what the renderer makes of `Douglas Shuler`.
+    ///
+    /// Optional, where `color` is required, and the difference is what happens
+    /// when it is left out. A card with no `color` renders a *wrong* gem —
+    /// blue, which is right for a fifth of the set — so silence there is a
+    /// silent error. A card with no `artist` renders the bezel the template
+    /// already ships with, which is not wrong, only uncredited; and an author
+    /// working from a scan or an AI-generated piece may genuinely have nobody
+    /// to name. Refusing the card would then block work over a caption.
+    pub artist: Option<String>,
 }
 
 impl CardDef {
@@ -159,6 +171,14 @@ pub fn validate_file(yaml_path: &Path) -> Vec<ValidationIssue> {
                 }
             }
             None => issue("invalid 'color' value: expected a string".to_owned()),
+        }
+    }
+
+    // `artist` is optional — an uncredited card renders the bezel the template
+    // already ships with — but a non-string one is a typo, not an omission.
+    if let Some(artist) = data.get("artist") {
+        if artist.as_str().is_none() {
+            issue("invalid 'artist' value: expected a string".to_owned());
         }
     }
 

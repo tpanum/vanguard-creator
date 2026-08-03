@@ -900,6 +900,38 @@ pub fn fit_name_scale(name: &str, font: &FontRef, layout: &Layout) -> PxScale {
     }
 }
 
+// ── Bezel credit line ─────────────────────────────────────────────────────────
+
+/// The credit line to set in the bezel, or `None` if there is nothing to set.
+///
+/// The field is printed as written. The originals all read `Illus. <name>`, but
+/// that prefix is authored rather than derived: what goes in the bezel is a line
+/// of type, not a name the renderer decorates, so a card is free to credit two
+/// artists, name a photographer, or drop the abbreviation entirely — and what a
+/// YAML file says is what appears on the card.
+///
+/// Whitespace is trimmed, and a blank field prints nothing rather than leaving
+/// an empty line's worth of nothing centred in the banner.
+pub fn credit_line(artist: &str) -> Option<String> {
+    let artist = artist.trim();
+    (!artist.is_empty()).then(|| artist.to_owned())
+}
+
+/// Size at which the credit line fits between the banner's scroll ends.
+///
+/// `credit_size` unless the name is too long for the banner, in which case both
+/// axes shrink proportionally — the credit is a caption, so it gives up size
+/// before it gives up its place. No original needs this.
+pub fn fit_credit_scale(line: &str, font: &FontRef, layout: &Layout) -> PxScale {
+    let natural = PxScale::from(layout.credit_size);
+    let width = measure_str(line, font, natural);
+    if width <= layout.credit_max_width {
+        natural
+    } else {
+        PxScale::from(layout.credit_size * layout.credit_max_width / width)
+    }
+}
+
 // ── Rasterization helpers ─────────────────────────────────────────────────────
 
 /// How to lay ink down: what color, and how much the edge of a stroke spreads.
@@ -1485,6 +1517,74 @@ fn draw_lines(
                 *y += spec.line_height;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod credit_tests {
+    use super::*;
+    use crate::fonts::Fonts;
+    use crate::layout::DEFAULT;
+
+    /// The field is set as written — no prefix is added, and none is assumed.
+    /// A card that wants `Illus.` says so; one that wants something else gets
+    /// something else.
+    #[test]
+    fn the_field_is_printed_as_written() {
+        for line in [
+            "Illus. Douglas Shuler",
+            "Douglas Shuler",
+            "Illustrated by rk post",
+            "Illus. Mark Tedin & Mark Zug",
+        ] {
+            assert_eq!(credit_line(line).as_deref(), Some(line));
+        }
+        assert_eq!(
+            credit_line("  Illus. rk post  ").as_deref(),
+            Some("Illus. rk post"),
+            "surrounding whitespace should be trimmed"
+        );
+    }
+
+    /// A card with nothing to credit prints nothing, rather than centring an
+    /// empty line in the bezel.
+    #[test]
+    fn nothing_to_credit_prints_nothing() {
+        assert_eq!(credit_line(""), None);
+        assert_eq!(credit_line("   "), None);
+    }
+
+    /// Every original is set at `credit_size`; only a name too long for the
+    /// banner is reduced, and then only as far as it has to be.
+    #[test]
+    fn originals_are_set_at_full_size() {
+        let fonts = Fonts::load().unwrap();
+        // The widest credit lines in the reference set.
+        for artist in [
+            "Illus. Anson Maddocks",
+            "Illus. Douglas Shuler",
+            "Illus. Matthew Wilson",
+        ] {
+            let line = credit_line(artist).unwrap();
+            let scale = fit_credit_scale(&line, &fonts.credit, &DEFAULT);
+            assert_eq!(scale.y, DEFAULT.credit_size, "{artist} was resized");
+        }
+    }
+
+    #[test]
+    fn a_long_name_is_shrunk_to_the_banner() {
+        let fonts = Fonts::load().unwrap();
+        let line =
+            credit_line("Illus. Rembrandt Harmenszoon van Rijn and Johannes Vermeer van Delft")
+                .unwrap();
+        let scale = fit_credit_scale(&line, &fonts.credit, &DEFAULT);
+        assert!(scale.y < DEFAULT.credit_size);
+        let width = measure_str(&line, &fonts.credit, scale);
+        assert!(
+            (width - DEFAULT.credit_max_width).abs() < 1.0,
+            "shrunk to {width}, not the banner's {}",
+            DEFAULT.credit_max_width
+        );
     }
 }
 

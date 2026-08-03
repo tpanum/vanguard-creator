@@ -148,12 +148,26 @@ fn write_yaml(
     hand: &str,
     life: &str,
     artwork_rel: &str,
+    artist: Option<&str>,
 ) -> Result<()> {
+    // An MSE set need not carry an illustrator at all — the Vanguard style in
+    // `../bug-vanguards` does not — and `artist` is optional, so a card without
+    // one is written without the field rather than with an empty one.
+    //
+    // MSE stores a bare name, and `artist` is set on the card exactly as
+    // written, so the `Illus.` the originals print is added here, in the file,
+    // where the author can read it and change it. Nothing is added at render
+    // time: the import writes a first draft of the line, not a rule about it.
+    let artist_line = match artist.map(str::trim).filter(|a| !a.is_empty()) {
+        Some(a) if a.starts_with("Illus.") => format!("artist: {}\n", yaml_quote(a)),
+        Some(a) => format!("artist: {}\n", yaml_quote(&format!("Illus. {a}"))),
+        None => String::new(),
+    };
     // Manual YAML serialization to maintain field order per SPECS
     let content = format!(
         "name: {}\nability: |-\n{}\nhand: \"{}\"\nlife: \"{}\"\n\
          color: \"{IMPORTED_COLOR}\" # not in the .mse-set — check against the card\n\
-         artwork: {}\n",
+         artwork: {}\n{artist_line}",
         yaml_quote(name),
         ability
             .lines()
@@ -236,7 +250,17 @@ pub fn run(mse_path: &Path, out_dir: &Path, artwork_subdir: &str, overwrite: boo
         let hand = card.get("handmod").map(String::as_str).unwrap_or("+0");
         let life = card.get("lifemod").map(String::as_str).unwrap_or("+0");
 
-        write_yaml(&yaml_path, &name, &ability, hand, life, &artwork_rel)?;
+        let artist = card.get("illustrator").map(String::as_str);
+
+        write_yaml(
+            &yaml_path,
+            &name,
+            &ability,
+            hand,
+            life,
+            &artwork_rel,
+            artist,
+        )?;
         println!("  {} -> {}", name, yaml_path.display());
         written += 1;
     }

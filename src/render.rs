@@ -195,6 +195,9 @@ pub fn render_card(
         &fonts.stats,
         layout,
     );
+    if let Some(artist) = card.artist.as_deref() {
+        draw_credit(&mut canvas, artist, &fonts.credit, layout);
+    }
 
     Ok(canvas)
 }
@@ -245,6 +248,28 @@ pub fn draw_stat(
             PxScale::from(layout.stats_size),
             text::stats_tracking(value, layout),
         ),
+        text::Pen::new(BLACK, layout.ink_gain),
+    );
+}
+
+/// Draw the artist credit on its baseline in the bottom bezel.
+///
+/// Baseline-anchored, like the card name and for the same reason: the line has
+/// to sit in the same place on every card, and half the artists' names have a
+/// descender.
+pub fn draw_credit(canvas: &mut RgbaImage, artist: &str, font: &FontRef, layout: &Layout) {
+    let Some(line) = text::credit_line(artist) else {
+        return;
+    };
+    let scale = text::fit_credit_scale(&line, font, layout);
+    let pen_x = layout.credit_center_x - text::measure_str(&line, font, scale) / 2.0;
+    text::draw_text_at_baseline(
+        canvas,
+        &line,
+        pen_x,
+        layout.credit_baseline,
+        font,
+        text::Run::new(scale),
         text::Pen::new(BLACK, layout.ink_gain),
     );
 }

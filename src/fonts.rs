@@ -17,6 +17,15 @@ pub struct Fonts {
     /// and an even stroke; scoring letterform shape against the card scans
     /// prefers Fremont too.
     pub stats: FontRef<'static>,
+    /// Bezel credit line font (MPlantin Regular).
+    ///
+    /// The body face, but not the body *weight*: the credit is set lighter than
+    /// the rules text above it. Scored against the credit line segmented out of
+    /// six scans (`cargo run --release --example illus_font`), MPlantin Regular
+    /// reaches 0.636 mean shape F1 where MPlantin Bold reaches 0.605 and
+    /// Fremont 0.573 — and Regular at 16 px lays down the same ink volume as
+    /// the scans, where Bold lays down a quarter more.
+    pub credit: FontRef<'static>,
 }
 
 impl Fonts {
@@ -28,6 +37,8 @@ impl Fonts {
                 .context("parsing embedded body font")?,
             stats: FontRef::try_from_slice(bundle::font("Fremont-Regular.ttf"))
                 .context("parsing embedded stats font")?,
+            credit: FontRef::try_from_slice(bundle::font("Mplantin.ttf"))
+                .context("parsing embedded credit font")?,
         })
     }
 }

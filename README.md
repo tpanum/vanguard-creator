@@ -12,6 +12,7 @@ hand: "-4"
 life: "+0"
 color: "blue"
 artwork: "assets/artwork/gerrard.png"
+artist: "Illus. Douglas Shuler"
 ```
 
 Render it using vgc:
@@ -58,7 +59,7 @@ vgc parse-mse <file.mse-set> [flags]
 | `--artwork-dir <name>` | Subdirectory name for extracted artwork. Default: `artwork`. |
 | `--overwrite` | Overwrite existing files. Default: skip if YAML already exists. |
 
-An `.mse-set` carries nothing that says what colour a card's gem is, so every imported card is written as `color: "blue"` with a comment marking it for review. Check it against the card before rendering.
+An `.mse-set` carries nothing that says what colour a card's gem is, so every imported card is written as `color: "blue"` with a comment marking it for review. Check it against the card before rendering. An `illustrator` field is imported as `artist` where the set has one, written as `Illus. <name>` to match the originals; the Vanguard style does not have to carry one.
 
 ### `vgc print`
 
@@ -143,6 +144,7 @@ hand: "-1"
 life: "+3"
 color: "red"
 artwork: "artwork/goblin-king.png"
+artist: "Illus. Jane Doe"
 ```
 
 | Field | Required | Description |
@@ -153,6 +155,7 @@ artwork: "artwork/goblin-king.png"
 | `life` | yes | Starting life modifier (e.g. `+3`, `+12`, `-8`). One or two digits. |
 | `color` | yes | Colour of the gem in the bottom bezel: `white`, `blue`, `black`, `red` or `green`, or the Magic letter `w` `u` `b` `r` `g`, in any casing. A pair such as `wu` or `white/blue` grades the two colours into each other across the sphere, left to right. Note this does *not* follow the card's Magic colour identity — Serra's gem is green and Volrath's is white. |
 | `artwork` | yes | Path to artwork image, resolved relative to the YAML file. |
+| `artist` | no | Credit line set in the bottom bezel, printed exactly as written — write the `Illus.` yourself if you want it, as the originals do. Left out, the bezel stays as the template has it. |
 | `flavor` | no | Flavor text rendered below the ability text. **Currently poorly implemented — avoid using it until rendering is improved.** |
 
 ### Mana Symbols
