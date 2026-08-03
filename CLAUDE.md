@@ -361,6 +361,62 @@ reads as two loose columns.
 None of this is visible to the accuracy suite — no original is modal — so it
 rests on the unit tests in `src/text.rs` and on looking at a rendered card.
 
+## The illustrator credit
+
+Every original prints `Illus. <artist>` in the gold bezel banner, over a second
+line naming Wizards of the Coast and a year. **vgc draws the first line only.**
+The notice is a statement about who owns the card, and generating it for a
+custom card would make that statement falsely; the bezel reads perfectly well
+with one line, which is what the template ships blank for.
+
+The face is **MPlantin Regular** — the body face, but not the body *weight*.
+`cargo run --release --example illus_font` segments the credit line out of six
+scans and scores each candidate on shape F1, the same metric that chose the
+stat-bubble face: Regular 0.636, MPlantin Bold 0.605, Fremont 0.573. Weight
+settles it independently of the metric — Regular at 16 px lays down the same ink
+volume as the scans (460 px against 444 on Gerrard, 518 against 514 on Volrath)
+where Bold lays down a quarter more.
+
+That example is also where `credit_baseline`, `credit_center_x` and
+`credit_size` come from, and the size is fitted as **one constant over the whole
+set** rather than averaged from per-card optima: mean shape F1 peaks sharply at
+16.0 (0.61, against 0.50 at 15.75 and 0.51 at 16.5). The centre, 361.5, is not
+`text_box.center_x()` — the bezel sits slightly right of the panel above it, and
+the six scans agree on 360.7–362.5, which is the centre the gem sits on too.
+
+Three decisions worth keeping:
+
+- **`Illus.` is authored, never derived.** Unlike the modal em dash, the prefix
+  is not implied by the datum: what the bezel holds is a line of type, not a
+  name the renderer decorates. A card may want to credit two artists, name a
+  photographer, or write the word out — so `artist:` is set exactly as written
+  and the YAML file is the whole of what appears on the card. The 25 reference
+  cards therefore carry `artist: "Illus. Douglas Shuler"`, not the bare name.
+  `parse-mse` is the one place the prefix is added, because MSE stores a bare
+  name: it writes `Illus. <name>` *into the file*, where it can be read and
+  changed, and still adds nothing at render time.
+- **The line is anchored on its baseline**, like the card name and for the same
+  reason: half the artists' names have a descender, and `Illus. Douglas Shuler`
+  must not sit higher than `Illus. Mark Tedin`.
+- **`artist` is optional where `color` is required.** The distinction is what
+  silence produces. No `color` renders a *wrong* gem — blue, right for a fifth
+  of the set — so it has to be an error. No `artist` renders the bezel the
+  template already has, which is uncredited but not wrong, and an author working
+  from a piece with no named illustrator has nobody to put there.
+
+The names in `tests/cards/*.yaml` are read off the scans, not from Scryfall, and
+the two disagree: Scryfall spells Serra's and Maraxus's artist `Matthew D.
+Wilson` where the cards print `Matthew Wilson`, and it gives Tawnos to Stephen
+Daniele where the scan credits Donato Giancola — the scans span several Vanguard
+printings, as their copyright years show (1997, 1993–1998, 1993–1999). The scan
+is the ground truth here as everywhere else.
+
+The accuracy suite does not see any of this — it scores four regions and the
+bezel is not one of them — so what checks it is the unit tests in `src/text.rs`
+(the field is set as written, absent for an empty one; every original sets at
+full size; an over-long line shrinks to exactly the banner) and looking at a
+rendered card beside its scan.
+
 ## The gem
 
 Every original carries a glossy sphere in the bottom bezel, and it is not always the same colour. Sampling the gem disc out of all 25 scans in `tests/assets/` puts the cards into four tight clusters — blue, green, red, white — so this is a real per-card property, recorded as a **required** `color:` field in each card's YAML. `src/gem.rs` recolours it.

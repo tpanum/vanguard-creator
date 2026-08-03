@@ -183,6 +183,35 @@ pub struct Layout {
     /// Radius (px) of the disc drawn as a mode bullet, at `ability_size`.
     /// Scaled with the type for the same reason as `mode_indent`.
     pub mode_bullet_radius: f32,
+    /// Baseline of the bezel credit line (`Illus. <artist>`), in px.
+    ///
+    /// A baseline rather than a box centre, for the same reason the card name
+    /// has one: the line must sit in the same place whether or not the artist's
+    /// name happens to contain a descender, and `Illus. Douglas Shuler` has one
+    /// where `Illus. Mark Tedin` does not.
+    ///
+    /// Fitted against the credit line segmented out of six scans: the best
+    /// alignment puts it at 924.5–926.5 with no trend across cards.
+    pub credit_baseline: f32,
+    /// Horizontal centre of the credit line, in px.
+    ///
+    /// Not `text_box.center_x()`: the bezel banner is set slightly right of the
+    /// panel above it, and the six fitted scans agree on 360.7–362.5 — the same
+    /// centre the gem sits on.
+    pub credit_center_x: f32,
+    /// Credit line font size, in px. Fitted over the six scans as one constant
+    /// rather than averaged from per-card optima; mean shape F1 peaks sharply
+    /// here (0.61 at 16.0, 0.50 at 15.75, 0.51 at 16.5).
+    pub credit_size: f32,
+    /// Widest the credit line may be set, in px.
+    ///
+    /// The banner's interior is 133–578 at the baseline, but it is notched by
+    /// the scroll ends at the height the capitals reach, where it narrows to
+    /// 150–570. A name too long for that is scaled down rather than run into
+    /// the notch, and stops 10 px short of it either side so a long line reads
+    /// as set in the banner rather than wedged into it. No original comes close:
+    /// the widest, `Illus. Anson Maddocks`, is 161 px.
+    pub credit_max_width: f32,
     /// Center of the coloured gem set into the bottom bezel.
     pub gem_center: (f32, f32),
     /// Radius of the gem sphere, in pixels. Recolouring fades out over the
@@ -246,6 +275,10 @@ pub const DEFAULT: Layout = Layout {
     symbol_y_offset: 1.0,
     mode_indent: 20.0,
     mode_bullet_radius: 2.6,
+    credit_baseline: 925.5,
+    credit_center_x: 361.5,
+    credit_size: 16.0,
+    credit_max_width: 400.0,
     gem_center: (361.5, 955.5),
     gem_radius: 16.5,
 };

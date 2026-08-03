@@ -40,6 +40,13 @@ life: "-2"               # string, must match /^[+-]\d+$/
 artwork: "path/to.png"   # string, file path to artwork image
 ```
 
+### 2.1.1 Optional Fields
+
+```yaml
+artist: "Illus. Douglas Shuler" # string, credit line set in the bottom bezel
+flavor: "Flavor text."   # string, set below the ability text
+```
+
 ### 2.2 Path Resolution
 
 The `artwork` path is resolved relative to the YAML file's parent directory, not the working directory. Absolute paths are used as-is.
@@ -92,6 +99,16 @@ If the artwork is smaller than the art box in both dimensions, it is still scale
 - Size: Fixed (does not auto-scale).
 - Position: Horizontally and vertically centered on the name banner center point.
 - Color: Black.
+
+### 3.4.1 Credit Line Rendering
+
+- Font: Body font, regular weight (not the bold used for rules text).
+- Size: Fixed, reduced only if the name is too wide for the banner.
+- Position: Centered on the bezel banner, on a fixed baseline — not centered vertically in a box, so a descender never moves the line.
+- Text: the `artist` field, set exactly as written. The renderer adds no prefix; a card that wants the originals' `Illus. ` carries it in the field.
+- Color: Black.
+
+Cards with no `artist` field get no credit line.
 
 ### 3.5 Ability Text Rendering
 
@@ -207,7 +224,7 @@ Each card's `image` field references a filename inside the ZIP archive. Extract 
 
 ### 4.4 Output
 
-One YAML file per card, using the sanitized card name as the filename. Fields written in schema order: `name`, `ability`, `hand`, `life`, `artwork`. The `artwork` path is relative to the YAML file.
+One YAML file per card, using the sanitized card name as the filename. Fields written in schema order: `name`, `ability`, `hand`, `life`, `color`, `artwork`, and `artist` where the set has an `illustrator` field, written as `Illus. <name>`. The MSE Vanguard style need not carry one, in which case the field is omitted rather than written empty. The `artwork` path is relative to the YAML file.
 
 Cards with no `name` field are skipped silently.
 
